@@ -1468,22 +1468,40 @@ function drawMatch(match) {
   ctx.arc(match.ball.x * FIELD.pxPerMeter, match.ball.y * FIELD.pxPerMeter, match.ball.radius * FIELD.pxPerMeter, 0, Math.PI * 2);
   ctx.fill();
 
-  const elapsedSeconds = Math.max(0, Math.floor(match.time));
-  const totalSeconds = Math.max(1, Math.floor(match.duration || 1));
+  const totalSeconds = Math.max(1, Number(match.duration) || 1);
   const progress = clamp(match.time / totalSeconds, 0, 1);
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const totalRemainSeconds = totalSeconds % 60;
 
-  const timeBoxWidth = 228;
-  const timeBoxHeight = 38;
-  const timeBoxX = ui.canvas.width - timeBoxWidth - 14;
-  const timeBoxY = 14;
-  const timeBarX = timeBoxX + 5;
-  const timeBarY = timeBoxY + 5;
-  const timeBarWidth = timeBoxWidth - 10;
-  const timeBarHeight = timeBoxHeight - 10;
+  const overlayX = 14;
+  const overlayY = 14;
+  const overlayGap = 12;
+  const scoreBoxWidth = Math.min(260, Math.max(190, ui.canvas.width * 0.36));
+  const scoreBoxHeight = 52;
+  const scoreBoxX = overlayX;
+  const scoreBoxY = overlayY;
+  const scoreCenterY = scoreBoxY + scoreBoxHeight / 2;
+
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  ctx.fillRect(scoreBoxX, scoreBoxY, scoreBoxWidth, scoreBoxHeight);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 18px Inter, sans-serif";
+  ctx.fillStyle = TEAM_COLORS.A;
+  ctx.fillText(`#${match.individualA.id}`, scoreBoxX + 42, scoreCenterY + 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 28px Inter, sans-serif";
+  ctx.fillText(`${match.score.A} : ${match.score.B}`, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 1);
+  ctx.fillStyle = TEAM_COLORS.B;
+  ctx.font = "bold 18px Inter, sans-serif";
+  ctx.fillText(`#${match.individualB.id}`, scoreBoxX + scoreBoxWidth - 42, scoreCenterY + 1);
+
+  const timeBoxX = scoreBoxX + scoreBoxWidth + overlayGap;
+  const timeBoxY = overlayY;
+  const timeBoxWidth = Math.max(80, ui.canvas.width - overlayX - timeBoxX);
+  const timeBoxHeight = 52;
+  const timeBarX = timeBoxX + 6;
+  const timeBarY = timeBoxY + 10;
+  const timeBarWidth = Math.max(20, timeBoxWidth - 12);
+  const timeBarHeight = timeBoxHeight - 20;
   const fillWidth = timeBarWidth * progress;
 
   ctx.fillStyle = "rgba(0,0,0,0.42)";
@@ -1510,23 +1528,6 @@ function drawMatch(match) {
   ctx.strokeStyle = "rgba(255,255,255,0.16)";
   ctx.lineWidth = 1;
   ctx.strokeRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 15px Inter, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(
-    `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")} / ${String(totalMinutes).padStart(2, "0")}:${String(totalRemainSeconds).padStart(2, "0")}`,
-    timeBoxX + timeBoxWidth / 2,
-    timeBoxY + timeBoxHeight / 2 + 0.5,
-  );
-
-  ctx.fillStyle = "rgba(0,0,0,0.38)";
-  ctx.fillRect(14, 14, 120, 52);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 28px Inter, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(`${match.score.A} : ${match.score.B}`, 74, 40);
   ctx.textAlign = "start";
   ctx.textBaseline = "alphabetic";
 }
