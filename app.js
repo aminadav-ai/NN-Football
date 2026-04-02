@@ -1924,27 +1924,22 @@ ui.loadBtn.addEventListener("click", () => {
 
 ui.slowBtn.addEventListener("click", () => {
   applySpeedState({ preset: "slow", useMaxSpeed: false, persist: true });
-  addLog(`Включён ${state.mode.toLowerCase()} режим.`);
 });
 
 ui.fastBtn.addEventListener("click", () => {
   applySpeedState({ preset: "fast", useMaxSpeed: false, persist: true });
-  addLog(`Включён ${state.mode.toLowerCase()} режим.`);
 });
 
 ui.ultraBtn.addEventListener("click", () => {
   applySpeedState({ preset: "ultra", useMaxSpeed: false, persist: true });
-  addLog(`Включён ${state.mode.toLowerCase()} режим.`);
 });
 
 ui.maxBtn.addEventListener("click", () => {
   applySpeedState({ preset: state.speedPreset === "max" ? "ultra" : state.speedPreset, useMaxSpeed: true, persist: true });
-  addLog("Включён режим без ограничений / max. Множитель скорости игнорируется.");
 });
 
 ui.speedMultiplier.addEventListener("change", () => {
   applySpeedState({ multiplier: ui.speedMultiplier.value, useMaxSpeed: state.useMaxSpeed, persist: true });
-  addLog(`Множитель скорости установлен: ×${formatMultiplier(state.speedMultiplier)}.`);
 });
 
 ui.showBtn.addEventListener("click", () => {
