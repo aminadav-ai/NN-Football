@@ -1160,18 +1160,13 @@ class EvolutionTrainer {
     }
 
     this.schedule = [];
-    const rounds = Math.max(2, Math.ceil(Math.log2(this.population.length)));
-
-    for (let round = 0; round < rounds; round += 1) {
-      const order = shuffle(this.population.map((_, index) => index));
-      for (let i = 0; i < order.length - 1; i += 2) {
-        this.schedule.push([order[i], order[i + 1]]);
-      }
-      if (order.length % 2 === 1) {
-        this.schedule.push([order[order.length - 1], order[0]]);
+    for (let indexA = 0; indexA < this.population.length; indexA += 1) {
+      for (let indexB = indexA + 1; indexB < this.population.length; indexB += 1) {
+        this.schedule.push([indexA, indexB]);
       }
     }
 
+    this.schedule = shuffle(this.schedule);
     this.matchCursor = 0;
     this.loadNextMatch();
   }
