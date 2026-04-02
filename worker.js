@@ -898,9 +898,9 @@ class FootballMatch {
         const ballSpeed = Math.hypot(this.ball.vx, this.ball.vy);
         const nearVerticalEdge = this.ball.x - this.ball.radius <= 0.75 || this.ball.x + this.ball.radius >= FIELD.width - 0.75;
         const nearHorizontalEdge = this.ball.y - this.ball.radius <= 0.75 || this.ball.y + this.ball.radius >= FIELD.height - 0.75;
-        const ballPinnedInCorner = nearVerticalEdge && nearHorizontalEdge && ballSpeed < 0.6;
+        const ballPinnedOnBoundary = (nearVerticalEdge || nearHorizontalEdge) && ballSpeed < 0.6;
 
-        if (!player.isTouchingBall && !ballPinnedInCorner) {
+        if (!player.isTouchingBall && !ballPinnedOnBoundary) {
           this.addFitness(player.team, "ballTouch", this.getFitnessSetting("ballTouchReward"));
           player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
