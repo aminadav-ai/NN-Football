@@ -332,6 +332,7 @@ function savePopulation(trainer = state.trainer) {
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
     nextIndividualId,
+    logs: [...logs],
     config: trainer.config
       ? {
           ...trainer.config,
@@ -388,6 +389,11 @@ function loadPopulation() {
     state.savedPopulationData = payload;
     if (payload.config) {
       setControlsFromConfig(payload.config);
+    }
+    if (Array.isArray(payload.logs) && payload.logs.length) {
+      logs.length = 0;
+      logs.push(...payload.logs.slice(0, MAX_LOG_ENTRIES));
+      ui.log.textContent = logs.join("\n");
     }
     updateSaveStatus(payload);
     return payload;
