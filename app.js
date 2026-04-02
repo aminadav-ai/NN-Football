@@ -23,6 +23,18 @@ const HARD_COLLISION_THRESHOLD = 1.5;
 const HARD_COLLISION_PENALTY = 1.5;
 const MAX_LOG_ENTRIES = 500;
 const POPULATION_STORAGE_KEY = "flower-3.population.v1";
+const FITNESS_BREAKDOWN_ROWS = [
+  { key: "ballTouch", label: "Касание мяча" },
+  { key: "goals", label: "Гол сопернику" },
+  { key: "conceded", label: "Пропущенный гол" },
+  { key: "ownGoal", label: "Автогол" },
+  { key: "playerContact", label: "Касание игрока" },
+  { key: "hardCollision", label: "Сильный толчок" },
+  { key: "possession", label: "Владение мячом" },
+  { key: "proximity", label: "Ближайший к мячу" },
+  { key: "scoreDiff", label: "Разница счёта" },
+  { key: "total", label: "Итого", total: true },
+];
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -44,6 +56,9 @@ const ui = {
   showBtn: document.getElementById("showBtn"),
   hideBtn: document.getElementById("hideBtn"),
   skipBtn: document.getElementById("skipBtn"),
+  fitnessPanels: document.getElementById("fitnessPanels"),
+  fitnessTableA: document.getElementById("fitnessTableA"),
+  fitnessTableB: document.getElementById("fitnessTableB"),
   generation: document.getElementById("generation"),
   matchInfo: document.getElementById("matchInfo"),
   bestFitness: document.getElementById("bestFitness"),
@@ -123,6 +138,44 @@ function addLog(message) {
     logs.length = MAX_LOG_ENTRIES;
   }
   ui.log.textContent = logs.join("\n");
+}
+
+function createEmptyFitnessBreakdown() {
+  return {
+    ballTouch: 0,
+    goals: 0,
+    conceded: 0,
+    ownGoal: 0,
+    playerContact: 0,
+    hardCollision: 0,
+    possession: 0,
+    proximity: 0,
+    scoreDiff: 0,
+  };
+}
+
+function formatFitnessValue(value) {
+  const normalized = Math.abs(value) < 0.0005 ? 0 : value;
+  if (normalized === 0) return "0.00";
+  return `${normalized > 0 ? "+" : ""}${normalized.toFixed(2)}`;
+}
+
+function renderFitnessTableBody(target, breakdown, total) {
+  target.innerHTML = FITNESS_BREAKDOWN_ROWS.map(({ key, label, total: isTotal }) => {
+    const value = isTotal ? total : (breakdown[key] || 0);
+    const rowClass = isTotal ? ' class="total-row"' : "";
+    return `<tr${rowClass}><th scope="row">${label}</th><td>${formatFitnessValue(value)}</td></tr>`;
+  }).join("");
+}
+
+function updateMatchFitnessTables(match) {
+  const breakdownA = match?.fitnessBreakdown?.A || createEmptyFitnessBreakdown();
+  const breakdownB = match?.fitnessBreakdown?.B || createEmptyFitnessBreakdown();
+  const totalA = match?.teamFitness?.A || 0;
+  const totalB = match?.teamFitness?.B || 0;
+
+  renderFitnessTableBody(ui.fitnessTableA, breakdownA, totalA);
+  renderFitnessTableBody(ui.fitnessTableB, breakdownB, totalB);
 }
 
 function setControlsFromConfig(config) {
@@ -357,6 +410,10 @@ class FootballMatch {
     this.duration = 60;
     this.done = false;
     this.teamFitness = { A: 0, B: 0 };
+    this.fitnessBreakdown = {
+      A: createEmptyFitnessBreakdown(),
+      B: createEmptyFitnessBreakdown(),
+    };
     this.score = { A: 0, B: 0 };
     this.players = [];
     this.ballTrail = [];
@@ -384,6 +441,11 @@ class FootballMatch {
     if (this.time >= this.duration) {
       this.finish();
     }
+  }
+
+  addFitness(team, component, amount) {
+    this.teamFitness[team] += amount;
+    this.fitnessBreakdown[team][component] += amount;
   }
 
   spawnPlayers() {
@@ -460,8 +522,8 @@ class FootballMatch {
     if (this.done) return;
     this.done = true;
     const diff = this.score.A - this.score.B;
-    this.teamFitness.A += diff * 4;
-    this.teamFitness.B -= diff * 4;
+    this.addFitness("A", "scoreDiff", diff * 4);
+    this.addFitness("B", "scoreDiff", -diff * 4);
   }
 
   rewardBallProximity() {
@@ -482,15 +544,15 @@ class FootballMatch {
     }
 
     if (closestA < closestB) {
-      this.teamFitness.A += BALL_PROXIMITY_REWARD;
+      this.addFitness("A", "proximity", BALL_PROXIMITY_REWARD);
     } else {
-      this.teamFitness.B += BALL_PROXIMITY_REWARD;
+      this.addFitness("B", "proximity", BALL_PROXIMITY_REWARD);
     }
   }
 
   rewardBallPossession() {
     if (this.ball.lastTouchTeam && this.time - this.ball.lastTouchAt < 1.2) {
-      this.teamFitness[this.ball.lastTouchTeam] += BALL_POSSESSION_REWARD;
+      this.addFitness(this.ball.lastTouchTeam, "possession", BALL_POSSESSION_REWARD);
     }
   }
 
@@ -550,11 +612,11 @@ class FootballMatch {
         const { touching, impact, initiator } = resolveElasticCollision(a, b, 0.88);
 
         if (touching && initiator) {
-          this.teamFitness[initiator.team] -= PLAYER_CONTACT_PENALTY;
+          this.addFitness(initiator.team, "playerContact", -PLAYER_CONTACT_PENALTY);
         }
 
         if (impact > HARD_COLLISION_THRESHOLD && initiator) {
-          this.teamFitness[initiator.team] -= HARD_COLLISION_PENALTY;
+          this.addFitness(initiator.team, "hardCollision", -HARD_COLLISION_PENALTY);
         }
       }
     }
@@ -580,7 +642,7 @@ class FootballMatch {
         this.ball.vy += ny * push + player.vy * 0.35;
 
         if (this.time - player.lastTouchAt > 0.35) {
-          this.teamFitness[player.team] += 1.5;
+          this.addFitness(player.team, "ballTouch", 1.5);
           player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
           this.ball.lastTouchAt = this.time;
@@ -647,11 +709,11 @@ class FootballMatch {
   registerGoal(scoringTeam) {
     const concedingTeam = scoringTeam === "A" ? "B" : "A";
     this.score[scoringTeam] += 1;
-    this.teamFitness[scoringTeam] += 35;
-    this.teamFitness[concedingTeam] -= 10;
+    this.addFitness(scoringTeam, "goals", 35);
+    this.addFitness(concedingTeam, "conceded", -10);
 
     if (this.ball.lastTouchTeam === concedingTeam) {
-      this.teamFitness[concedingTeam] -= 25;
+      this.addFitness(concedingTeam, "ownGoal", -25);
     }
 
     this.onEvent?.(
@@ -1035,6 +1097,7 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
 function applyPitchWidth() {
   state.pitchWidth = Math.round(Math.min(1800, Math.max(1, state.pitchWidth)));
   ui.pitchStage.style.width = `${state.pitchWidth}px`;
+  ui.fitnessPanels.style.width = `${state.pitchWidth}px`;
 }
 
 function getPitchResizeMode(clientX, clientY) {
@@ -1254,6 +1317,7 @@ function updateStats() {
   ui.modeInfo.textContent = state.mode;
   ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
 
+  updateMatchFitnessTables(status.currentMatch);
   drawMatch(status.currentMatch);
 }
 
