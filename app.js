@@ -182,6 +182,7 @@ function applyLiveFitnessSettings() {
     if (state.trainer.currentMatch?.config) {
       state.trainer.currentMatch.config.fitnessSettings = fitnessSettings;
     }
+    savePopulation(state.trainer);
   }
 
   return fitnessSettings;
@@ -266,6 +267,38 @@ function deserializeNetwork(data) {
   );
 }
 
+function serializeMatchState(match, currentA, currentB) {
+  if (!match) {
+    return null;
+  }
+
+  return {
+    individualAId: currentA?.id || null,
+    individualBId: currentB?.id || null,
+    time: match.time,
+    duration: match.duration,
+    done: match.done,
+    score: { ...match.score },
+    teamFitness: { ...match.teamFitness },
+    fitnessBreakdown: {
+      A: { ...match.fitnessBreakdown.A },
+      B: { ...match.fitnessBreakdown.B },
+    },
+    ball: { ...match.ball },
+    ballTrail: match.ballTrail.map((point) => ({ ...point })),
+    players: match.players.map((player) => ({
+      team: player.team,
+      x: player.x,
+      y: player.y,
+      vx: player.vx,
+      vy: player.vy,
+      dir: player.dir,
+      radius: player.radius,
+      lastTouchAt: player.lastTouchAt,
+    })),
+  };
+}
+
 function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = "") {
   ui.loadBtn.disabled = !savedData;
   ui.saveStatus.classList.remove("ready", "error");
@@ -291,12 +324,21 @@ function savePopulation(trainer = state.trainer) {
   }
 
   const payload = {
-    version: 1,
+    version: 2,
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
     nextIndividualId,
-    config: trainer.config ? { ...trainer.config, populationSize: trainer.population.length } : null,
+    config: trainer.config
+      ? {
+          ...trainer.config,
+          populationSize: trainer.population.length,
+          fitnessSettings: {
+            ...FITNESS_SETTINGS_DEFAULTS,
+            ...(trainer.config.fitnessSettings || {}),
+          },
+        }
+      : null,
     population: trainer.population.map((individual) => ({
       id: individual.id,
       fitness: individual.fitness,
@@ -309,6 +351,12 @@ function savePopulation(trainer = state.trainer) {
           network: serializeNetwork(trainer.bestEver.network),
         }
       : null,
+    progress: {
+      running: trainer.running,
+      matchCursor: trainer.matchCursor,
+      schedule: trainer.schedule.map(([indexA, indexB]) => [indexA, indexB]),
+      currentMatch: serializeMatchState(trainer.currentMatch, trainer.currentA, trainer.currentB),
+    },
   };
 
   try {
@@ -805,14 +853,32 @@ class EvolutionTrainer {
   }
 
   start(config, savedData = null) {
-    this.config = { ...config };
+    this.config = {
+      ...config,
+      fitnessSettings: {
+        ...FITNESS_SETTINGS_DEFAULTS,
+        ...(config.fitnessSettings || {}),
+      },
+    };
     this.bestEver = null;
+    this.currentA = null;
+    this.currentB = null;
     this.currentMatch = null;
 
     if (savedData?.population?.length) {
-      this.restorePopulation(savedData, config);
+      this.restorePopulation(savedData, this.config);
       this.running = true;
-      this.prepareGeneration();
+
+      if (savedData.progress?.currentMatch && this.restoreCurrentMatch(savedData.progress.currentMatch)) {
+        savePopulation(this);
+      } else if (this.schedule.length && this.matchCursor < this.schedule.length) {
+        this.loadNextMatch();
+        savePopulation(this);
+      } else {
+        this.prepareGeneration();
+        savePopulation(this);
+      }
+
       this.onLog(
         `Загружено сохранение: поколение ${this.generation}, лучший фитнес ${this.bestFitness.toFixed(2)}.`,
       );
@@ -824,6 +890,7 @@ class EvolutionTrainer {
     this.bestFitness = 0;
     this.running = true;
     this.prepareGeneration();
+    savePopulation(this);
     this.onLog(
       `Старт нового обучения: популяция ${this.config.populationSize}, игроков ${this.config.teamSize}, матч ${this.config.matchMinutes} мин.`,
     );
@@ -834,6 +901,11 @@ class EvolutionTrainer {
       ...fallbackConfig,
       ...(savedData.config || {}),
       populationSize: savedData.population.length,
+      fitnessSettings: {
+        ...FITNESS_SETTINGS_DEFAULTS,
+        ...(fallbackConfig.fitnessSettings || {}),
+        ...((savedData.config && savedData.config.fitnessSettings) || {}),
+      },
     };
 
     this.config = mergedConfig;
@@ -854,6 +926,79 @@ class EvolutionTrainer {
           network: deserializeNetwork(savedData.bestEver.network),
         }
       : null;
+
+    const savedSchedule = Array.isArray(savedData.progress?.schedule)
+      ? savedData.progress.schedule
+          .filter((pair) => Array.isArray(pair) && pair.length === 2)
+          .map(([indexA, indexB]) => [
+            clamp(Math.floor(Number(indexA) || 0), 0, this.population.length - 1),
+            clamp(Math.floor(Number(indexB) || 0), 0, this.population.length - 1),
+          ])
+      : [];
+
+    this.schedule = savedSchedule;
+    this.matchCursor = clamp(
+      Math.floor(Number(savedData.progress?.matchCursor) || 0),
+      0,
+      Math.max(0, savedSchedule.length),
+    );
+  }
+
+  restoreCurrentMatch(savedMatch) {
+    const pair = this.schedule[this.matchCursor];
+    if (!pair) {
+      return false;
+    }
+
+    const [indexA, indexB] = pair;
+    this.currentA = this.population[indexA];
+    this.currentB = this.population[indexB];
+
+    if (!this.currentA || !this.currentB) {
+      return false;
+    }
+
+    const match = new FootballMatch(this.currentA, this.currentB, this.config, this.onLog);
+    match.time = Number(savedMatch.time) || 0;
+    match.duration = Math.max(1, Number(savedMatch.duration) || match.duration);
+    match.done = Boolean(savedMatch.done);
+    match.score = {
+      A: Number(savedMatch.score?.A) || 0,
+      B: Number(savedMatch.score?.B) || 0,
+    };
+    match.teamFitness = {
+      A: Number(savedMatch.teamFitness?.A) || 0,
+      B: Number(savedMatch.teamFitness?.B) || 0,
+    };
+    match.fitnessBreakdown = {
+      A: { ...createEmptyFitnessBreakdown(), ...(savedMatch.fitnessBreakdown?.A || {}) },
+      B: { ...createEmptyFitnessBreakdown(), ...(savedMatch.fitnessBreakdown?.B || {}) },
+    };
+    match.ball = {
+      ...match.ball,
+      ...(savedMatch.ball || {}),
+      radius: FIELD.ballRadius,
+    };
+    match.ballTrail = Array.isArray(savedMatch.ballTrail) && savedMatch.ballTrail.length
+      ? savedMatch.ballTrail.map((point) => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }))
+      : [{ x: match.ball.x, y: match.ball.y }];
+
+    if (Array.isArray(savedMatch.players) && savedMatch.players.length === match.players.length) {
+      match.players = savedMatch.players.map((player) => ({
+        team: player.team === "B" ? "B" : "A",
+        network: (player.team === "B" ? this.currentB : this.currentA).network,
+        x: Number(player.x) || 0,
+        y: Number(player.y) || 0,
+        vx: Number(player.vx) || 0,
+        vy: Number(player.vy) || 0,
+        dir: Number(player.dir) || 0,
+        radius: Number(player.radius) || FIELD.playerRadius,
+        lastTouchAt: Number(player.lastTouchAt) || -999,
+      }));
+    }
+
+    this.currentMatch = match;
+    return true;
   }
 
   createPopulation(config) {
@@ -933,6 +1078,7 @@ class EvolutionTrainer {
       this.finishGeneration();
     } else {
       this.loadNextMatch();
+      savePopulation(this);
     }
   }
 
@@ -1022,8 +1168,8 @@ class EvolutionTrainer {
     this.population = nextGeneration;
     this.generation += 1;
     this.bestFitness = Math.max(this.bestFitness, leader.fitness);
-    savePopulation(this);
     this.prepareGeneration();
+    savePopulation(this);
   }
 
   pickParent(ranked, eliteCount) {
@@ -1476,6 +1622,12 @@ window.addEventListener("pointermove", handlePitchResize);
 window.addEventListener("pointerup", stopPitchResize);
 window.addEventListener("pointercancel", stopPitchResize);
 window.addEventListener("resize", applyPitchWidth);
+window.addEventListener("beforeunload", () => {
+  savePopulation(state.trainer);
+});
+window.addEventListener("pagehide", () => {
+  savePopulation(state.trainer);
+});
 
 ui.hideBtn.addEventListener("click", () => {
   state.showGames = false;
@@ -1488,6 +1640,7 @@ ui.matchMinutes.addEventListener("change", () => {
 
   if (state.trainer?.running) {
     state.trainer.updateMatchDuration(minutes);
+    savePopulation(state.trainer);
     state.lastFrameTime = performance.now();
   } else {
     addLog(`Длительность новых матчей установлена: ${minutes} мин.`);
