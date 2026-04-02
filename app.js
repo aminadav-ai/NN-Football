@@ -64,6 +64,7 @@ const ui = {
   fastBtn: document.getElementById("fastBtn"),
   showBtn: document.getElementById("showBtn"),
   hideBtn: document.getElementById("hideBtn"),
+  pauseBtn: document.getElementById("pauseBtn"),
   skipBtn: document.getElementById("skipBtn"),
   fitnessPanels: document.getElementById("fitnessPanels"),
   fitnessTableCombined: document.getElementById("fitnessTableCombined"),
@@ -88,6 +89,7 @@ const state = {
   pitchResize: null,
   savedPopulationData: null,
   sidebarCollapsed: true,
+  isPaused: false,
 };
 
 let nextIndividualId = 1;
@@ -1264,6 +1266,14 @@ function applySidebarState() {
   ui.sidebarToggle.textContent = state.sidebarCollapsed ? "☰" : "✕";
 }
 
+function updatePlaybackControls() {
+  const hasActiveTraining = Boolean(state.trainer?.running);
+  ui.pauseBtn.disabled = !hasActiveTraining;
+  ui.pauseBtn.textContent = state.isPaused ? "Возобновить" : "Пауза";
+  ui.skipBtn.hidden = state.stepsPerFrame !== SLOW_STEPS;
+  ui.skipBtn.disabled = !hasActiveTraining || state.isPaused;
+}
+
 function applyPitchWidth() {
   state.pitchWidth = Math.round(Math.min(1800, Math.max(1, state.pitchWidth)));
   ui.pitchStage.style.width = `${state.pitchWidth}px`;
@@ -1484,9 +1494,10 @@ function updateStats() {
   ui.generation.textContent = String(status.generation);
   ui.matchInfo.textContent = status.matchInfo;
   ui.bestFitness.textContent = status.bestFitness.toFixed(2);
-  ui.modeInfo.textContent = state.mode;
+  ui.modeInfo.textContent = state.isPaused ? `${state.mode} · пауза` : state.mode;
   ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
 
+  updatePlaybackControls();
   updateMatchFitnessTables(status.currentMatch);
   drawMatch(status.currentMatch);
 }
@@ -1499,7 +1510,7 @@ function tick(timestamp) {
   const elapsedSeconds = clamp((timestamp - state.lastFrameTime) / 1000, 0, 0.1);
   state.lastFrameTime = timestamp;
 
-  if (state.trainer?.running) {
+  if (state.trainer?.running && !state.isPaused) {
     state.trainer.step(elapsedSeconds * state.stepsPerFrame);
   }
 
@@ -1510,6 +1521,7 @@ function tick(timestamp) {
 ui.startBtn.addEventListener("click", () => {
   const trainer = new EvolutionTrainer(addLog);
   state.trainer = trainer;
+  state.isPaused = false;
   trainer.start(readConfig());
   state.lastFrameTime = performance.now();
   addLog("Новое обучение запущено со случайной популяцией.");
@@ -1528,6 +1540,7 @@ ui.loadBtn.addEventListener("click", () => {
 
   const trainer = new EvolutionTrainer(addLog);
   state.trainer = trainer;
+  state.isPaused = false;
   trainer.start(readConfig(), savedData);
   state.lastFrameTime = performance.now();
   addLog("Продолжено обучение из последнего сохранения.");
@@ -1550,6 +1563,18 @@ ui.fastBtn.addEventListener("click", () => {
 ui.showBtn.addEventListener("click", () => {
   state.showGames = true;
   addLog("Показ матчей включён.");
+});
+
+ui.pauseBtn.addEventListener("click", () => {
+  if (!state.trainer?.running) {
+    addLog("Сейчас нет активного обучения для паузы.");
+    return;
+  }
+
+  state.isPaused = !state.isPaused;
+  state.lastFrameTime = performance.now();
+  updatePlaybackControls();
+  addLog(state.isPaused ? "Обучение поставлено на паузу." : "Обучение возобновлено.");
 });
 
 ui.sidebarToggle.addEventListener("click", () => {

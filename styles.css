@@ -245,6 +245,13 @@ button.secondary-action {
   flex: 0 0 auto;
 }
 
+.match-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
 .pitch-stage {
   position: relative;
   width: 550px;
@@ -270,9 +277,17 @@ button.secondary-action {
   user-select: none;
 }
 
-.skip-btn {
+.skip-btn,
+.pause-btn {
   min-width: 220px;
+}
+
+.skip-btn {
   background: linear-gradient(135deg, #324c62, #1e3142);
+}
+
+.pause-btn {
+  background: linear-gradient(135deg, #5a6980, #36495d);
 }
 
 .fitness-panels {
