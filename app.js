@@ -57,7 +57,7 @@ const state = {
   mode: "Медленный",
   trainer: null,
   lastFrameTime: null,
-  pitchWidth: 1100,
+  pitchWidth: 550,
   pitchResize: null,
 };
 
@@ -869,7 +869,7 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
 }
 
 function applyPitchWidth() {
-  state.pitchWidth = Math.round(clamp(state.pitchWidth, 640, 1800));
+  state.pitchWidth = Math.round(Math.min(1800, Math.max(1, state.pitchWidth)));
   ui.pitchStage.style.width = `${state.pitchWidth}px`;
 }
 
