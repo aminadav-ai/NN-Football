@@ -15,6 +15,7 @@ const MAX_PLAYER_SPEED = 12;
 const STEP_DT = 0.08;
 const FAST_STEPS = 24;
 const SLOW_STEPS = 2;
+const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -207,6 +208,7 @@ class FootballMatch {
     this.teamFitness = { A: 0, B: 0 };
     this.score = { A: 0, B: 0 };
     this.players = [];
+    this.ballTrail = [];
     this.goalTop = (FIELD.height - FIELD.goalWidth) / 2;
     this.goalBottom = this.goalTop + FIELD.goalWidth;
 
@@ -220,6 +222,7 @@ class FootballMatch {
       lastTouchAt: -999,
     };
 
+    this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
     this.spawnPlayers();
   }
 
@@ -262,6 +265,7 @@ class FootballMatch {
     this.ball.vy = randRange(-0.6, 0.6);
     this.ball.lastTouchTeam = null;
     this.ball.lastTouchAt = -999;
+    this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
     this.spawnPlayers();
   }
 
@@ -426,6 +430,26 @@ class FootballMatch {
 
       this.ball.x = FIELD.width - this.ball.radius;
       this.ball.vx = -Math.abs(this.ball.vx) * 0.9;
+    }
+
+    this.recordBallTrail();
+  }
+
+  recordBallTrail() {
+    const speed = Math.hypot(this.ball.vx, this.ball.vy);
+
+    if (speed < BALL_TRAIL_SPEED_THRESHOLD) {
+      this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
+      return;
+    }
+
+    const lastPoint = this.ballTrail[this.ballTrail.length - 1];
+    if (!lastPoint || Math.hypot(this.ball.x - lastPoint.x, this.ball.y - lastPoint.y) > 0.45) {
+      this.ballTrail.push({ x: this.ball.x, y: this.ball.y });
+    }
+
+    if (this.ballTrail.length > 28) {
+      this.ballTrail.shift();
     }
   }
 
@@ -758,6 +782,26 @@ function drawMatch(match) {
   if (!state.showGames) {
     drawCenterText("Показ матчей отключён — обучение идёт в фоне");
     return;
+  }
+
+  const ballSpeed = Math.hypot(match.ball.vx, match.ball.vy);
+  if (
+    state.stepsPerFrame === FAST_STEPS &&
+    ballSpeed >= BALL_TRAIL_SPEED_THRESHOLD &&
+    match.ballTrail.length > 1
+  ) {
+    for (let i = 1; i < match.ballTrail.length; i += 1) {
+      const prev = match.ballTrail[i - 1];
+      const curr = match.ballTrail[i];
+      const alpha = i / match.ballTrail.length;
+
+      ctx.beginPath();
+      ctx.moveTo(prev.x * FIELD.pxPerMeter, prev.y * FIELD.pxPerMeter);
+      ctx.lineTo(curr.x * FIELD.pxPerMeter, curr.y * FIELD.pxPerMeter);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + alpha * 0.45})`;
+      ctx.lineWidth = 1.5 + alpha * 2.5;
+      ctx.stroke();
+    }
   }
 
   for (const player of match.players) {
