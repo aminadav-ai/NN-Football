@@ -48,6 +48,8 @@ const TEAM_COLORS = {
 };
 
 const ui = {
+  appShell: document.getElementById("appShell"),
+  sidebarToggle: document.getElementById("sidebarToggle"),
   canvas: document.getElementById("pitch"),
   pitchStage: document.getElementById("pitchStage"),
   teamSize: document.getElementById("teamSize"),
@@ -94,6 +96,7 @@ const state = {
   pitchWidth: 550,
   pitchResize: null,
   savedPopulationData: null,
+  sidebarCollapsed: true,
 };
 
 let nextIndividualId = 1;
@@ -1306,6 +1309,13 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   return { touching: true, impact: Math.abs(relVel), initiator };
 }
 
+function applySidebarState() {
+  ui.appShell.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  ui.sidebarToggle.setAttribute("aria-expanded", String(!state.sidebarCollapsed));
+  ui.sidebarToggle.title = state.sidebarCollapsed ? "Показать панель" : "Скрыть панель";
+  ui.sidebarToggle.textContent = state.sidebarCollapsed ? "☰" : "✕";
+}
+
 function applyPitchWidth() {
   state.pitchWidth = Math.round(Math.min(1800, Math.max(1, state.pitchWidth)));
   ui.pitchStage.style.width = `${state.pitchWidth}px`;
@@ -1595,6 +1605,11 @@ ui.showBtn.addEventListener("click", () => {
   addLog("Показ матчей включён.");
 });
 
+ui.sidebarToggle.addEventListener("click", () => {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  applySidebarState();
+});
+
 [
   ui.fitnessBallTouch,
   ui.fitnessGoal,
@@ -1658,6 +1673,7 @@ ui.skipBtn.addEventListener("click", () => {
 });
 
 loadPopulation();
+applySidebarState();
 applyPitchWidth();
 updateStats();
 ui.log.textContent = logs.join("\n");

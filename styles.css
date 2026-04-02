@@ -22,15 +22,49 @@ body {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 360px 1fr;
+  position: relative;
   min-height: 100vh;
 }
 
+.sidebar-toggle {
+  position: fixed;
+  top: 14px;
+  left: 314px;
+  z-index: 30;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 1.35rem;
+  line-height: 1;
+  background: rgba(18, 32, 44, 0.95);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transition: left 180ms ease, background 180ms ease;
+}
+
+.app-shell.sidebar-collapsed .sidebar-toggle {
+  left: 12px;
+}
+
 .panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 360px;
+  z-index: 20;
   padding: 20px;
-  background: rgba(10, 19, 27, 0.9);
+  overflow-y: auto;
+  background: rgba(10, 19, 27, 0.96);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 12px 0 34px rgba(0, 0, 0, 0.28);
+  transform: translateX(0);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.app-shell.sidebar-collapsed .panel {
+  transform: translateX(calc(-100% - 16px));
+  box-shadow: none;
 }
 
 h1 {
@@ -194,7 +228,8 @@ button.secondary-action {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 16px;
+  min-height: 100vh;
+  padding: 16px 16px 16px 68px;
   overflow: auto;
 }
 
@@ -297,13 +332,18 @@ canvas {
 }
 
 @media (max-width: 1100px) {
-  .app-shell {
-    grid-template-columns: 1fr;
+  .panel {
+    width: min(360px, calc(100vw - 24px));
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: none;
   }
 
-  .panel {
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  .app-shell.sidebar-collapsed .sidebar-toggle {
+    left: 12px;
+  }
+
+  .pitch-wrap {
+    padding-left: 68px;
   }
 
   .fitness-panels {

@@ -7,8 +7,19 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="panel controls">
+    <div class="app-shell sidebar-collapsed" id="appShell">
+      <button
+        id="sidebarToggle"
+        class="sidebar-toggle"
+        type="button"
+        aria-label="Показать или скрыть панель"
+        aria-controls="sidebarPanel"
+        aria-expanded="false"
+        title="Показать панель"
+      >
+        ☰
+      </button>
+      <aside class="panel controls" id="sidebarPanel">
         <h1>Flower-3</h1>
         <p class="subtitle">Эволюционное обучение нейросети игре в футбол</p>
 
