@@ -374,19 +374,21 @@ function formatMultiplier(multiplier) {
 }
 
 function applySpeedState(options = {}) {
-  const preset = options.preset ?? state.speedPreset ?? "fast";
+  const requestedPreset = options.preset ?? state.speedPreset ?? "fast";
+  const normalizedPreset = requestedPreset === "max" ? "fast" : requestedPreset;
   const multiplier = normalizeSpeedMultiplier(options.multiplier ?? state.speedMultiplier ?? 1);
   const useMaxSpeed = Boolean(options.useMaxSpeed ?? state.useMaxSpeed);
+  const effectiveMultiplier = useMaxSpeed ? 1 : multiplier;
   const shouldNotifyWorker = options.notifyWorker ?? Boolean(state.worker);
   const shouldPersist = options.persist ?? false;
 
-  state.speedPreset = useMaxSpeed ? "max" : preset;
+  state.speedPreset = useMaxSpeed ? "max" : normalizedPreset;
   state.speedMultiplier = multiplier;
   state.useMaxSpeed = useMaxSpeed;
-  state.stepsPerFrame = Math.max(1, Math.round(getBaseStepsForPreset(preset) * multiplier));
+  state.stepsPerFrame = Math.max(1, Math.round(getBaseStepsForPreset(normalizedPreset) * effectiveMultiplier));
   state.mode = useMaxSpeed
-    ? `Max ×${formatMultiplier(multiplier)}`
-    : `${preset === "slow" ? "Медленный" : preset === "ultra" ? "Ультра-быстрый" : "Быстрый"}${multiplier !== 1 ? ` ×${formatMultiplier(multiplier)}` : ""}`;
+    ? "Max"
+    : `${normalizedPreset === "slow" ? "Медленный" : normalizedPreset === "ultra" ? "Ультра-быстрый" : "Быстрый"}${multiplier !== 1 ? ` ×${formatMultiplier(multiplier)}` : ""}`;
 
   ui.speedMultiplier.value = formatMultiplier(multiplier);
 
@@ -1937,7 +1939,7 @@ ui.ultraBtn.addEventListener("click", () => {
 
 ui.maxBtn.addEventListener("click", () => {
   applySpeedState({ preset: state.speedPreset === "max" ? "ultra" : state.speedPreset, useMaxSpeed: true, persist: true });
-  addLog("Включён режим без ограничений / max.");
+  addLog("Включён режим без ограничений / max. Множитель скорости игнорируется.");
 });
 
 ui.speedMultiplier.addEventListener("change", () => {
