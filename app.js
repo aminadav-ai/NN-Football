@@ -554,6 +554,7 @@ function serializeMatchState(match, currentA, currentB) {
       dir: player.dir,
       radius: player.radius,
       lastTouchAt: player.lastTouchAt,
+      isTouchingBall: Boolean(player.isTouchingBall),
     })),
   };
 }
@@ -881,6 +882,7 @@ class FootballMatch {
         dir: team === "A" ? 0 : Math.PI,
         radius: FIELD.playerRadius,
         lastTouchAt: -999,
+        isTouchingBall: false,
       });
     }
   }
@@ -993,6 +995,8 @@ class FootballMatch {
   }
 
   updateBall(dt) {
+    const touchingPlayers = new Set();
+
     for (const player of this.players) {
       const dx = this.ball.x - player.x;
       const dy = this.ball.y - player.y;
@@ -1000,6 +1004,7 @@ class FootballMatch {
       const minDistance = this.ball.radius + player.radius;
 
       if (distance < minDistance) {
+        touchingPlayers.add(player);
         const nx = dx / distance;
         const ny = dy / distance;
         const overlap = minDistance - distance;
@@ -1011,12 +1016,20 @@ class FootballMatch {
         this.ball.vx += nx * push + player.vx * 0.35;
         this.ball.vy += ny * push + player.vy * 0.35;
 
-        if (this.time - player.lastTouchAt > 0.35) {
+        if (!player.isTouchingBall) {
           this.addFitness(player.team, "ballTouch", this.getFitnessSetting("ballTouchReward"));
           player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
           this.ball.lastTouchAt = this.time;
         }
+
+        player.isTouchingBall = true;
+      }
+    }
+
+    for (const player of this.players) {
+      if (!touchingPlayers.has(player)) {
+        player.isTouchingBall = false;
       }
     }
 
@@ -1246,6 +1259,7 @@ class EvolutionTrainer {
         dir: Number(player.dir) || 0,
         radius: Number(player.radius) || FIELD.playerRadius,
         lastTouchAt: Number(player.lastTouchAt) || -999,
+        isTouchingBall: Boolean(player.isTouchingBall),
       }));
     }
 
