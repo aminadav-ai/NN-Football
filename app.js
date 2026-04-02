@@ -242,6 +242,8 @@ function setControlsFromConfig(config) {
   ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 64));
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
+  ui.showTimeToggle.checked = config.showTimeIndicator !== false;
+  state.showTimeIndicator = ui.showTimeToggle.checked;
 
   const fitnessSettings = normalizeFitnessSettings(config.fitnessSettings);
   ui.fitnessBallTouch.value = String(fitnessSettings.ballTouchReward);
@@ -340,6 +342,7 @@ function savePopulation(trainer = state.trainer) {
       ? {
           ...trainer.config,
           populationSize: trainer.population.length,
+          showTimeIndicator: state.showTimeIndicator,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
         }
       : null,
@@ -1377,6 +1380,7 @@ function readConfig() {
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 64),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
+    showTimeIndicator: ui.showTimeToggle.checked,
     fitnessSettings: readFitnessSettings(),
   };
 }
@@ -1641,6 +1645,10 @@ ui.pauseBtn.addEventListener("click", () => {
 
 ui.showTimeToggle.addEventListener("change", () => {
   state.showTimeIndicator = ui.showTimeToggle.checked;
+  if (state.trainer?.config) {
+    state.trainer.config.showTimeIndicator = state.showTimeIndicator;
+    savePopulation(state.trainer);
+  }
   addLog(state.showTimeIndicator ? "Индикатор времени матча включён." : "Индикатор времени матча скрыт.");
 });
 
