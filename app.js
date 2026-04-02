@@ -1400,7 +1400,7 @@ function drawField() {
   ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
   if (state.showFieldStripes) {
-    const stripeCount = 10;
+    const stripeCount = 4;
     const stripeWidth = ui.canvas.width / stripeCount;
     for (let i = 0; i < stripeCount; i += 1) {
       ctx.fillStyle = i % 2 === 0 ? "#2f9f49" : "#23833b";
