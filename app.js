@@ -29,6 +29,7 @@ const TEAM_COLORS = {
 
 const ui = {
   canvas: document.getElementById("pitch"),
+  pitchStage: document.getElementById("pitchStage"),
   teamSize: document.getElementById("teamSize"),
   hiddenLayers: document.getElementById("hiddenLayers"),
   neuronsPerLayer: document.getElementById("neuronsPerLayer"),
@@ -56,6 +57,8 @@ const state = {
   mode: "Медленный",
   trainer: null,
   lastFrameTime: null,
+  pitchWidth: 1100,
+  pitchResize: null,
 };
 
 let nextIndividualId = 1;
@@ -865,6 +868,84 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   return { touching: true, impact: Math.abs(relVel), initiator };
 }
 
+function applyPitchWidth() {
+  state.pitchWidth = Math.round(clamp(state.pitchWidth, 640, 1800));
+  ui.pitchStage.style.width = `${state.pitchWidth}px`;
+}
+
+function getPitchResizeMode(clientX, clientY) {
+  const rect = ui.pitchStage.getBoundingClientRect();
+  const edgeSize = 18;
+  const onRightEdge = rect.right - clientX <= edgeSize;
+  const onBottomEdge = rect.bottom - clientY <= edgeSize;
+
+  if (onRightEdge && onBottomEdge) return "corner";
+  if (onRightEdge) return "right";
+  if (onBottomEdge) return "bottom";
+  return null;
+}
+
+function getPitchResizeCursor(mode) {
+  if (mode === "corner") return "nwse-resize";
+  if (mode === "right") return "ew-resize";
+  if (mode === "bottom") return "ns-resize";
+  return "default";
+}
+
+function updatePitchResizeCursor(event) {
+  if (state.pitchResize) return;
+  const mode = getPitchResizeMode(event.clientX, event.clientY);
+  ui.pitchStage.style.cursor = getPitchResizeCursor(mode);
+}
+
+function startPitchResize(event) {
+  const mode = getPitchResizeMode(event.clientX, event.clientY);
+  if (!mode) return;
+
+  event.preventDefault();
+  const rect = ui.pitchStage.getBoundingClientRect();
+  state.pitchResize = {
+    mode,
+    startX: event.clientX,
+    startY: event.clientY,
+    startWidth: rect.width,
+    startHeight: rect.height,
+  };
+  ui.pitchStage.classList.add("is-resizing");
+  ui.pitchStage.style.cursor = getPitchResizeCursor(mode);
+}
+
+function handlePitchResize(event) {
+  if (!state.pitchResize) return;
+
+  const aspectRatio = FIELD.width / FIELD.height;
+  const { mode, startX, startY, startWidth, startHeight } = state.pitchResize;
+  const deltaX = event.clientX - startX;
+  const deltaY = event.clientY - startY;
+
+  let nextWidth = startWidth;
+
+  if (mode === "right") {
+    nextWidth = startWidth + deltaX;
+  } else if (mode === "bottom") {
+    nextWidth = (startHeight + deltaY) * aspectRatio;
+  } else if (mode === "corner") {
+    const widthFromRight = startWidth + deltaX;
+    const widthFromBottom = (startHeight + deltaY) * aspectRatio;
+    nextWidth = Math.max(widthFromRight, widthFromBottom);
+  }
+
+  state.pitchWidth = nextWidth;
+  applyPitchWidth();
+}
+
+function stopPitchResize() {
+  if (!state.pitchResize) return;
+  state.pitchResize = null;
+  ui.pitchStage.classList.remove("is-resizing");
+  ui.pitchStage.style.cursor = "default";
+}
+
 function readConfig() {
   return {
     teamSize: clamp(Number(ui.teamSize.value) || 4, 1, 8),
@@ -875,62 +956,34 @@ function readConfig() {
   };
 }
 
-function addRoundedRectPath(x, y, width, height, radius) {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
 function drawField() {
-  const width = ui.canvas.width;
-  const height = ui.canvas.height;
-  const cornerRadius = 16;
+  ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
-  ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#1b7f38";
-  addRoundedRectPath(0, 0, width, height, cornerRadius);
-  ctx.fill();
-
-  ctx.save();
-  addRoundedRectPath(0, 0, width, height, cornerRadius);
-  ctx.clip();
+  ctx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
 
   ctx.strokeStyle = "rgba(255,255,255,0.9)";
   ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, ui.canvas.width - 2, ui.canvas.height - 2);
 
   ctx.beginPath();
-  ctx.moveTo(width / 2, 0);
-  ctx.lineTo(width / 2, height);
+  ctx.moveTo(ui.canvas.width / 2, 0);
+  ctx.lineTo(ui.canvas.width / 2, ui.canvas.height);
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.arc(width / 2, height / 2, 90, 0, Math.PI * 2);
+  ctx.arc(ui.canvas.width / 2, ui.canvas.height / 2, 90, 0, Math.PI * 2);
   ctx.stroke();
 
   const goalHeightPx = FIELD.goalWidth * FIELD.pxPerMeter;
-  const goalTopPx = (height - goalHeightPx) / 2;
+  const goalTopPx = (ui.canvas.height - goalHeightPx) / 2;
 
   ctx.strokeRect(0, goalTopPx, 70, goalHeightPx);
-  ctx.strokeRect(width - 70, goalTopPx, 70, goalHeightPx);
+  ctx.strokeRect(ui.canvas.width - 70, goalTopPx, 70, goalHeightPx);
 
   ctx.fillStyle = "rgba(255,255,255,0.15)";
   ctx.fillRect(0, goalTopPx, 12, goalHeightPx);
-  ctx.fillRect(width - 12, goalTopPx, 12, goalHeightPx);
-  ctx.restore();
-
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.lineWidth = 2;
-  addRoundedRectPath(1, 1, width - 2, height - 2, cornerRadius - 1);
-  ctx.stroke();
+  ctx.fillRect(ui.canvas.width - 12, goalTopPx, 12, goalHeightPx);
 }
 
 function drawMatch(match) {
@@ -1083,6 +1136,18 @@ ui.showBtn.addEventListener("click", () => {
   addLog("Показ матчей включён.");
 });
 
+ui.pitchStage.addEventListener("pointerdown", startPitchResize);
+ui.pitchStage.addEventListener("pointermove", updatePitchResizeCursor);
+ui.pitchStage.addEventListener("pointerleave", () => {
+  if (!state.pitchResize) {
+    ui.pitchStage.style.cursor = "default";
+  }
+});
+window.addEventListener("pointermove", handlePitchResize);
+window.addEventListener("pointerup", stopPitchResize);
+window.addEventListener("pointercancel", stopPitchResize);
+window.addEventListener("resize", applyPitchWidth);
+
 ui.hideBtn.addEventListener("click", () => {
   state.showGames = false;
   addLog("Показ матчей отключён.");
@@ -1110,6 +1175,7 @@ ui.skipBtn.addEventListener("click", () => {
   state.lastFrameTime = performance.now();
 });
 
+applyPitchWidth();
 updateStats();
 ui.log.textContent = logs.join("\n");
 requestAnimationFrame(tick);

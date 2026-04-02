@@ -143,6 +143,32 @@ button.primary {
   justify-content: center;
   gap: 14px;
   padding: 16px;
+  overflow: auto;
+}
+
+.pitch-stage {
+  position: relative;
+  width: 1100px;
+  flex: 0 0 auto;
+}
+
+.pitch-stage::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 16px;
+  height: 16px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, rgba(255, 255, 255, 0.72) 45% 55%, transparent 55%),
+    linear-gradient(135deg, transparent 0 65%, rgba(255, 255, 255, 0.52) 65% 75%, transparent 75%),
+    linear-gradient(135deg, transparent 0 85%, rgba(255, 255, 255, 0.36) 85% 95%, transparent 95%);
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.pitch-stage.is-resizing {
+  user-select: none;
 }
 
 .skip-btn {
@@ -151,10 +177,11 @@ button.primary {
 }
 
 canvas {
-  width: min(100%, 1100px);
+  display: block;
+  width: 100%;
   height: auto;
   background: #1b7f38;
-  border-radius: 16px;
+  border-radius: 0;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 
