@@ -53,8 +53,8 @@ const ctx = ui.canvas.getContext("2d");
 
 const state = {
   showGames: true,
-  stepsPerFrame: SLOW_STEPS,
-  mode: "Медленный",
+  stepsPerFrame: FAST_STEPS,
+  mode: "Быстрый",
   trainer: null,
   lastFrameTime: null,
   pitchWidth: 550,
