@@ -26,7 +26,7 @@ const FITNESS_SETTINGS_DEFAULTS = {
   hardCollisionPenalty: -1.5,
 };
 const HARD_COLLISION_THRESHOLD = 1.5;
-const MAX_LOG_ENTRIES = 500;
+const MAX_LOG_ENTRIES = 1000;
 const POPULATION_STORAGE_KEY = "flower-3.population.v1";
 const FITNESS_BREAKDOWN_ROWS = [
   { key: "ballTouch", label: "Касание мяча" },

@@ -961,10 +961,6 @@ class FootballMatch {
       this.addFitness(concedingTeam, "ownGoal", this.getFitnessSetting("ownGoalPenalty"));
     }
 
-    this.onEvent?.(
-      `Гол: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — счёт ${this.score.A}:${this.score.B}`,
-    );
-
     this.resetAfterGoal();
   }
 }
