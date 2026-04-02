@@ -88,6 +88,9 @@ const state = {
   stepsPerFrame: FAST_STEPS,
   mode: "Быстрый",
   trainer: null,
+  worker: null,
+  workerStatus: null,
+  workerSaveData: null,
   lastFrameTime: null,
   pitchWidth: 550,
   pitchResize: null,
@@ -162,6 +165,59 @@ function clearLogs() {
   ui.log.textContent = "";
 }
 
+function postToWorker(type, payload = {}) {
+  state.worker?.postMessage({ type, payload });
+}
+
+function handleWorkerMessage(event) {
+  const { type, payload, message } = event.data || {};
+
+  if (type === "ready") {
+    postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
+    postToWorker("setPaused", { isPaused: state.isPaused });
+    return;
+  }
+
+  if (type === "status") {
+    state.workerStatus = payload || null;
+    if (typeof payload?.isPaused === "boolean") {
+      state.isPaused = payload.isPaused;
+    }
+    return;
+  }
+
+  if (type === "saveData") {
+    state.workerSaveData = payload || null;
+    savePopulation(payload);
+    return;
+  }
+
+  if (type === "log" && message) {
+    addLog(message);
+    return;
+  }
+
+  if (type === "error") {
+    console.error("Worker error:", message);
+    addLog(`Ошибка Worker: ${message}`);
+  }
+}
+
+function ensureWorker() {
+  if (state.worker) {
+    return state.worker;
+  }
+
+  const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  worker.addEventListener("message", handleWorkerMessage);
+  worker.addEventListener("error", (event) => {
+    console.error("Не удалось запустить Worker:", event);
+    addLog("Ошибка запуска Worker. Симуляция не была перенесена в фоновый поток.");
+  });
+  state.worker = worker;
+  return worker;
+}
+
 function toFiniteNumber(value, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
@@ -196,12 +252,12 @@ function readFitnessSettings() {
 function applyLiveFitnessSettings() {
   const fitnessSettings = readFitnessSettings();
 
-  if (state.trainer?.config) {
-    state.trainer.config.fitnessSettings = fitnessSettings;
-    if (state.trainer.currentMatch?.config) {
-      state.trainer.currentMatch.config.fitnessSettings = fitnessSettings;
-    }
-    savePopulation(state.trainer);
+  postToWorker("updateFitnessSettings", { fitnessSettings });
+
+  const saveSource = state.workerSaveData || state.savedPopulationData;
+  if (saveSource?.config) {
+    saveSource.config.fitnessSettings = fitnessSettings;
+    savePopulation(saveSource);
   }
 
   return fitnessSettings;
@@ -334,25 +390,21 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   ui.saveStatus.textContent = "Сохранение не найдено.";
 }
 
-function savePopulation(trainer = state.trainer) {
+function buildSavePayloadFromTrainer(trainer) {
   if (!trainer?.population?.length) {
-    return false;
+    return null;
   }
 
-  const payload = {
+  return {
     version: 2,
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
     nextIndividualId,
-    pitchWidth: state.pitchWidth,
-    logs: [...logs],
     config: trainer.config
       ? {
           ...trainer.config,
           populationSize: trainer.population.length,
-          showTimeIndicator: state.showTimeIndicator,
-          showFieldStripes: state.showFieldStripes,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
         }
       : null,
@@ -375,10 +427,38 @@ function savePopulation(trainer = state.trainer) {
       currentMatch: serializeMatchState(trainer.currentMatch, trainer.currentA, trainer.currentB),
     },
   };
+}
+
+function savePopulation(source = state.workerSaveData || state.savedPopulationData || state.trainer) {
+  let payload = null;
+
+  if (source?.progress && Array.isArray(source.population)) {
+    payload = source;
+  } else if (source?.population?.length) {
+    payload = buildSavePayloadFromTrainer(source);
+  }
+
+  if (!payload?.population?.length) {
+    return false;
+  }
+
+  payload.savedAt = Date.now();
+  payload.pitchWidth = state.pitchWidth;
+  payload.logs = [...logs];
+  payload.config = payload.config
+    ? {
+        ...payload.config,
+        populationSize: payload.population.length,
+        showTimeIndicator: state.showTimeIndicator,
+        showFieldStripes: state.showFieldStripes,
+        fitnessSettings: normalizeFitnessSettings(payload.config.fitnessSettings),
+      }
+    : null;
 
   try {
     localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
     state.savedPopulationData = payload;
+    state.workerSaveData = payload;
     updateSaveStatus(payload);
     return true;
   } catch (error) {
@@ -403,6 +483,7 @@ function loadPopulation() {
     }
 
     state.savedPopulationData = payload;
+    state.workerSaveData = payload;
     if (payload.config) {
       setControlsFromConfig(payload.config);
     }
@@ -1298,7 +1379,7 @@ function applySidebarState() {
 }
 
 function updatePlaybackControls() {
-  const hasActiveTraining = Boolean(state.trainer?.running);
+  const hasActiveTraining = Boolean(state.workerStatus?.running);
   ui.pauseBtn.disabled = !hasActiveTraining;
   ui.pauseBtn.textContent = state.isPaused ? "Возобновить" : "Пауза";
   ui.skipBtn.hidden = state.stepsPerFrame !== SLOW_STEPS;
@@ -1570,7 +1651,7 @@ function drawCenterText(text) {
 }
 
 function updateStats() {
-  const status = state.trainer?.getStatus() || {
+  const status = state.workerStatus || {
     generation: 0,
     matchInfo: "—",
     bestFitness: 0,
@@ -1588,34 +1669,24 @@ function updateStats() {
   drawMatch(status.currentMatch);
 }
 
-function tick(timestamp) {
-  if (state.lastFrameTime === null) {
-    state.lastFrameTime = timestamp;
-  }
-
-  const elapsedSeconds = clamp((timestamp - state.lastFrameTime) / 1000, 0, 0.1);
-  state.lastFrameTime = timestamp;
-
-  if (state.trainer?.running && !state.isPaused) {
-    state.trainer.step(elapsedSeconds * state.stepsPerFrame);
-  }
-
+function tick() {
   updateStats();
   requestAnimationFrame(tick);
 }
 
 ui.startBtn.addEventListener("click", () => {
+  ensureWorker();
   clearLogs();
   nextIndividualId = 0;
-  const trainer = new EvolutionTrainer(addLog);
-  state.trainer = trainer;
+  state.trainer = null;
+  state.workerStatus = null;
+  state.workerSaveData = null;
   state.isPaused = false;
-  trainer.start(readConfig());
-  state.lastFrameTime = performance.now();
-  addLog("Новое обучение запущено со случайной популяцией.");
+  postToWorker("startNew", { config: readConfig(), resetIds: true });
 });
 
 ui.loadBtn.addEventListener("click", () => {
+  ensureWorker();
   const savedData = loadPopulation();
   if (!savedData) {
     addLog("Сохранение не найдено.");
@@ -1626,25 +1697,24 @@ ui.loadBtn.addEventListener("click", () => {
     setControlsFromConfig(savedData.config);
   }
 
-  const trainer = new EvolutionTrainer(addLog);
-  state.trainer = trainer;
+  state.trainer = null;
+  state.workerStatus = null;
+  state.workerSaveData = savedData;
   state.isPaused = false;
-  trainer.start(readConfig(), savedData);
-  state.lastFrameTime = performance.now();
-  addLog("Продолжено обучение из последнего сохранения.");
+  postToWorker("loadSaved", { config: readConfig(), savedData });
 });
 
 ui.slowBtn.addEventListener("click", () => {
   state.stepsPerFrame = SLOW_STEPS;
   state.mode = "Медленный";
-  state.lastFrameTime = performance.now();
+  postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
   addLog("Включён медленный режим реального времени.");
 });
 
 ui.fastBtn.addEventListener("click", () => {
   state.stepsPerFrame = FAST_STEPS;
   state.mode = "Быстрый";
-  state.lastFrameTime = performance.now();
+  postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
   addLog("Включён быстрый режим.");
 });
 
@@ -1654,32 +1724,28 @@ ui.showBtn.addEventListener("click", () => {
 });
 
 ui.pauseBtn.addEventListener("click", () => {
-  if (!state.trainer?.running) {
+  if (!state.workerStatus?.running) {
     addLog("Сейчас нет активного обучения для паузы.");
     return;
   }
 
   state.isPaused = !state.isPaused;
-  state.lastFrameTime = performance.now();
+  postToWorker("setPaused", { isPaused: state.isPaused });
   updatePlaybackControls();
   addLog(state.isPaused ? "Обучение поставлено на паузу." : "Обучение возобновлено.");
 });
 
 ui.showTimeToggle.addEventListener("change", () => {
   state.showTimeIndicator = ui.showTimeToggle.checked;
-  if (state.trainer?.config) {
-    state.trainer.config.showTimeIndicator = state.showTimeIndicator;
-    savePopulation(state.trainer);
-  }
+  postToWorker("updateConfig", { showTimeIndicator: state.showTimeIndicator });
+  savePopulation();
   addLog(state.showTimeIndicator ? "Индикатор времени матча включён." : "Индикатор времени матча скрыт.");
 });
 
 ui.showFieldStripesToggle.addEventListener("change", () => {
   state.showFieldStripes = ui.showFieldStripesToggle.checked;
-  if (state.trainer?.config) {
-    state.trainer.config.showFieldStripes = state.showFieldStripes;
-    savePopulation(state.trainer);
-  }
+  postToWorker("updateConfig", { showFieldStripes: state.showFieldStripes });
+  savePopulation();
   addLog(state.showFieldStripes ? "Полосы на поле включены." : "Полосы на поле скрыты.");
 });
 
@@ -1713,10 +1779,12 @@ window.addEventListener("pointerup", stopPitchResize);
 window.addEventListener("pointercancel", stopPitchResize);
 window.addEventListener("resize", applyPitchWidth);
 window.addEventListener("beforeunload", () => {
-  savePopulation(state.trainer);
+  postToWorker("requestSave");
+  savePopulation();
 });
 window.addEventListener("pagehide", () => {
-  savePopulation(state.trainer);
+  postToWorker("requestSave");
+  savePopulation();
 });
 
 ui.hideBtn.addEventListener("click", () => {
@@ -1728,35 +1796,33 @@ ui.matchMinutes.addEventListener("change", () => {
   const minutes = clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10);
   ui.matchMinutes.value = String(minutes);
 
-  if (state.trainer?.running) {
-    state.trainer.updateMatchDuration(minutes);
-    savePopulation(state.trainer);
-    state.lastFrameTime = performance.now();
+  if (state.workerStatus?.running) {
+    postToWorker("updateMatchDuration", { matchMinutes: minutes });
   } else {
     addLog(`Длительность новых матчей установлена: ${minutes} мин.`);
   }
 });
 
 ui.skipBtn.addEventListener("click", () => {
-  if (!state.trainer?.running) {
+  if (!state.workerStatus?.running) {
     addLog("Сейчас нет активного матча для пропуска.");
     return;
   }
 
-  state.trainer.skipCurrentMatch();
-  state.lastFrameTime = performance.now();
+  postToWorker("skipMatch");
 });
 
+ensureWorker();
 const initialSavedData = loadPopulation();
 if (initialSavedData) {
   if (initialSavedData.config) {
     setControlsFromConfig(initialSavedData.config);
   }
 
-  const trainer = new EvolutionTrainer(addLog);
-  state.trainer = trainer;
+  state.trainer = null;
+  state.workerSaveData = initialSavedData;
   state.isPaused = false;
-  trainer.start(readConfig(), initialSavedData);
+  postToWorker("loadSaved", { config: readConfig(), savedData: initialSavedData });
   addLog("Последнее сохранение загружено автоматически.");
 }
 
