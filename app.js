@@ -875,34 +875,62 @@ function readConfig() {
   };
 }
 
-function drawField() {
-  ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+function addRoundedRectPath(x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
+function drawField() {
+  const width = ui.canvas.width;
+  const height = ui.canvas.height;
+  const cornerRadius = 16;
+
+  ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#1b7f38";
-  ctx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
+  addRoundedRectPath(0, 0, width, height, cornerRadius);
+  ctx.fill();
+
+  ctx.save();
+  addRoundedRectPath(0, 0, width, height, cornerRadius);
+  ctx.clip();
 
   ctx.strokeStyle = "rgba(255,255,255,0.9)";
   ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, ui.canvas.width - 2, ui.canvas.height - 2);
 
   ctx.beginPath();
-  ctx.moveTo(ui.canvas.width / 2, 0);
-  ctx.lineTo(ui.canvas.width / 2, ui.canvas.height);
+  ctx.moveTo(width / 2, 0);
+  ctx.lineTo(width / 2, height);
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.arc(ui.canvas.width / 2, ui.canvas.height / 2, 90, 0, Math.PI * 2);
+  ctx.arc(width / 2, height / 2, 90, 0, Math.PI * 2);
   ctx.stroke();
 
   const goalHeightPx = FIELD.goalWidth * FIELD.pxPerMeter;
-  const goalTopPx = (ui.canvas.height - goalHeightPx) / 2;
+  const goalTopPx = (height - goalHeightPx) / 2;
 
   ctx.strokeRect(0, goalTopPx, 70, goalHeightPx);
-  ctx.strokeRect(ui.canvas.width - 70, goalTopPx, 70, goalHeightPx);
+  ctx.strokeRect(width - 70, goalTopPx, 70, goalHeightPx);
 
   ctx.fillStyle = "rgba(255,255,255,0.15)";
   ctx.fillRect(0, goalTopPx, 12, goalHeightPx);
-  ctx.fillRect(ui.canvas.width - 12, goalTopPx, 12, goalHeightPx);
+  ctx.fillRect(width - 12, goalTopPx, 12, goalHeightPx);
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 2;
+  addRoundedRectPath(1, 1, width - 2, height - 2, cornerRadius - 1);
+  ctx.stroke();
 }
 
 function drawMatch(match) {
