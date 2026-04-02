@@ -54,12 +54,29 @@ const state = {
   lastFrameTime: null,
 };
 
+let nextIndividualId = 1;
+let rngSeed = 1;
+
+function setRandomSeed(seed = Date.now()) {
+  rngSeed = (Math.floor(seed) >>> 0) || 1;
+  return rngSeed;
+}
+
+function random() {
+  rngSeed += 0x6D2B79F5;
+  let t = rngSeed;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+const initialRandomSeed = setRandomSeed(Date.now());
+
 const logs = [
   "Flower-3 готов к обучению.",
+  `Генератор случайных чисел инициализирован по времени: ${initialRandomSeed}.`,
   "Нажмите «Запустить обучение», чтобы начать эволюцию популяции.",
 ];
-
-let nextIndividualId = 1;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -70,7 +87,7 @@ function lerp(a, b, t) {
 }
 
 function randRange(min, max) {
-  return min + Math.random() * (max - min);
+  return min + random() * (max - min);
 }
 
 function normalizeAngle(angle) {
@@ -82,7 +99,7 @@ function normalizeAngle(angle) {
 function shuffle(array) {
   const copy = [...array];
   for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
@@ -164,13 +181,13 @@ class NeuralNetwork {
     const weights = this.weights.map((layer, layerIndex) =>
       layer.map((row, rowIndex) =>
         row.map((value, colIndex) =>
-          Math.random() < 0.5 ? value : other.weights[layerIndex][rowIndex][colIndex],
+          random() < 0.5 ? value : other.weights[layerIndex][rowIndex][colIndex],
         ),
       ),
     );
 
     const biases = this.biases.map((layer, layerIndex) =>
-      layer.map((value, index) => (Math.random() < 0.5 ? value : other.biases[layerIndex][index])),
+      layer.map((value, index) => (random() < 0.5 ? value : other.biases[layerIndex][index])),
     );
 
     return new NeuralNetwork(this.layerSizes, weights, biases);
@@ -180,7 +197,7 @@ class NeuralNetwork {
     for (const layer of this.weights) {
       for (const row of layer) {
         for (let i = 0; i < row.length; i += 1) {
-          if (Math.random() < rate) {
+          if (random() < rate) {
             row[i] += randRange(-amount, amount);
           }
         }
@@ -189,7 +206,7 @@ class NeuralNetwork {
 
     for (const layer of this.biases) {
       for (let i = 0; i < layer.length; i += 1) {
-        if (Math.random() < rate) {
+        if (random() < rate) {
           layer[i] += randRange(-amount, amount);
         }
       }
@@ -706,10 +723,10 @@ class EvolutionTrainer {
 
   pickParent(ranked, eliteCount) {
     const poolSize = Math.max(2, eliteCount + 1);
-    let best = ranked[Math.floor(Math.random() * poolSize)];
+    let best = ranked[Math.floor(random() * poolSize)];
 
     for (let i = 0; i < 2; i += 1) {
-      const candidate = ranked[Math.floor(Math.random() * poolSize)];
+      const candidate = ranked[Math.floor(random() * poolSize)];
       if (candidate.fitness > best.fitness) {
         best = candidate;
       }
