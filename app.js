@@ -1468,30 +1468,15 @@ function drawMatch(match) {
   ctx.arc(match.ball.x * FIELD.pxPerMeter, match.ball.y * FIELD.pxPerMeter, match.ball.radius * FIELD.pxPerMeter, 0, Math.PI * 2);
   ctx.fill();
 
-  const elapsedSeconds = Math.max(0, Math.floor(match.time));
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  const clockText = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-
   ctx.fillStyle = "rgba(0,0,0,0.38)";
-  ctx.fillRect(14, 14, 108, 42);
+  ctx.fillRect(14, 14, 120, 52);
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 22px Inter, sans-serif";
-  ctx.fillText(clockText, 26, 41);
-
-  const scoreBoxWidth = 370;
-  const scoreBoxX = (ui.canvas.width - scoreBoxWidth) / 2;
-  ctx.fillStyle = "rgba(0,0,0,0.38)";
-  ctx.fillRect(scoreBoxX, 14, scoreBoxWidth, 42);
+  ctx.font = "bold 28px Inter, sans-serif";
   ctx.textAlign = "center";
-  ctx.font = "bold 19px Inter, sans-serif";
-  ctx.fillStyle = TEAM_COLORS.A;
-  ctx.fillText(`#${match.individualA.id}`, ui.canvas.width / 2 - 105, 41);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(`${match.score.A} : ${match.score.B}`, ui.canvas.width / 2, 41);
-  ctx.fillStyle = TEAM_COLORS.B;
-  ctx.fillText(`#${match.individualB.id}`, ui.canvas.width / 2 + 105, 41);
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${match.score.A} : ${match.score.B}`, 74, 40);
   ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
 }
 
 function drawCenterText(text) {
