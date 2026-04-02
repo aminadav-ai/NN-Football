@@ -1468,24 +1468,29 @@ function drawMatch(match) {
   ctx.arc(match.ball.x * FIELD.pxPerMeter, match.ball.y * FIELD.pxPerMeter, match.ball.radius * FIELD.pxPerMeter, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "rgba(0,0,0,0.38)";
-  ctx.fillRect(14, 14, 180, 56);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 24px Inter, sans-serif";
-  ctx.fillText(`${match.score.A} : ${match.score.B}`, 32, 40);
-  ctx.font = "14px Inter, sans-serif";
-  ctx.fillText(`t = ${match.time.toFixed(1)} / ${match.duration} c`, 32, 60);
+  const elapsedSeconds = Math.max(0, Math.floor(match.time));
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  const clockText = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
-  const fitnessBoxWidth = 300;
-  const fitnessBoxX = (ui.canvas.width - fitnessBoxWidth) / 2;
   ctx.fillStyle = "rgba(0,0,0,0.38)";
-  ctx.fillRect(fitnessBoxX, 14, fitnessBoxWidth, 56);
+  ctx.fillRect(14, 14, 108, 42);
   ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "center";
   ctx.font = "bold 22px Inter, sans-serif";
-  ctx.fillText(`${match.teamFitness.A.toFixed(2)} : ${match.teamFitness.B.toFixed(2)}`, ui.canvas.width / 2, 40);
-  ctx.font = "14px Inter, sans-serif";
-  ctx.fillText("Фитнес за матч", ui.canvas.width / 2, 60);
+  ctx.fillText(clockText, 26, 41);
+
+  const scoreBoxWidth = 370;
+  const scoreBoxX = (ui.canvas.width - scoreBoxWidth) / 2;
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  ctx.fillRect(scoreBoxX, 14, scoreBoxWidth, 42);
+  ctx.textAlign = "center";
+  ctx.font = "bold 19px Inter, sans-serif";
+  ctx.fillStyle = TEAM_COLORS.A;
+  ctx.fillText(`#${match.individualA.id}`, ui.canvas.width / 2 - 105, 41);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(`${match.score.A} : ${match.score.B}`, ui.canvas.width / 2, 41);
+  ctx.fillStyle = TEAM_COLORS.B;
+  ctx.fillText(`#${match.individualB.id}`, ui.canvas.width / 2 + 105, 41);
   ctx.textAlign = "start";
 }
 
