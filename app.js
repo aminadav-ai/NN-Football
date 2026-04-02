@@ -74,8 +74,7 @@ const ui = {
   hideBtn: document.getElementById("hideBtn"),
   skipBtn: document.getElementById("skipBtn"),
   fitnessPanels: document.getElementById("fitnessPanels"),
-  fitnessTableA: document.getElementById("fitnessTableA"),
-  fitnessTableB: document.getElementById("fitnessTableB"),
+  fitnessTableCombined: document.getElementById("fitnessTableCombined"),
   generation: document.getElementById("generation"),
   matchInfo: document.getElementById("matchInfo"),
   bestFitness: document.getElementById("bestFitness"),
@@ -211,22 +210,18 @@ function formatFitnessValue(value) {
   return `${normalized > 0 ? "+" : ""}${normalized.toFixed(2)}`;
 }
 
-function renderFitnessTableBody(target, breakdown, total) {
-  target.innerHTML = FITNESS_BREAKDOWN_ROWS.map(({ key, label, total: isTotal }) => {
-    const value = isTotal ? total : (breakdown[key] || 0);
-    const rowClass = isTotal ? ' class="total-row"' : "";
-    return `<tr${rowClass}><th scope="row">${label}</th><td>${formatFitnessValue(value)}</td></tr>`;
-  }).join("");
-}
-
 function updateMatchFitnessTables(match) {
   const breakdownA = match?.fitnessBreakdown?.A || createEmptyFitnessBreakdown();
   const breakdownB = match?.fitnessBreakdown?.B || createEmptyFitnessBreakdown();
   const totalA = match?.teamFitness?.A || 0;
   const totalB = match?.teamFitness?.B || 0;
 
-  renderFitnessTableBody(ui.fitnessTableA, breakdownA, totalA);
-  renderFitnessTableBody(ui.fitnessTableB, breakdownB, totalB);
+  ui.fitnessTableCombined.innerHTML = FITNESS_BREAKDOWN_ROWS.map(({ key, label, total: isTotal }) => {
+    const valueA = isTotal ? totalA : (breakdownA[key] || 0);
+    const valueB = isTotal ? totalB : (breakdownB[key] || 0);
+    const rowClass = isTotal ? ' class="total-row"' : "";
+    return `<tr${rowClass}><th scope="row">${label}</th><td>${formatFitnessValue(valueA)}</td><td>${formatFitnessValue(valueB)}</td></tr>`;
+  }).join("");
 }
 
 function setControlsFromConfig(config) {

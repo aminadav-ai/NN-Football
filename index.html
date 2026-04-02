@@ -126,29 +126,17 @@
         <button id="skipBtn" class="skip-btn">Пропустить матч</button>
 
         <section class="fitness-panels" id="fitnessPanels" aria-label="Расшифровка фитнеса по командам">
-          <article class="fitness-card team-a">
-            <h2>Команда A — фитнес</h2>
-            <table class="fitness-table">
+          <article class="fitness-card fitness-card-combined">
+            <h2>Расшифровка фитнеса за матч</h2>
+            <table class="fitness-table fitness-table-combined">
               <thead>
                 <tr>
                   <th>Составляющая</th>
-                  <th>Значение</th>
+                  <th>Команда A</th>
+                  <th>Команда B</th>
                 </tr>
               </thead>
-              <tbody id="fitnessTableA"></tbody>
-            </table>
-          </article>
-
-          <article class="fitness-card team-b">
-            <h2>Команда B — фитнес</h2>
-            <table class="fitness-table">
-              <thead>
-                <tr>
-                  <th>Составляющая</th>
-                  <th>Значение</th>
-                </tr>
-              </thead>
-              <tbody id="fitnessTableB"></tbody>
+              <tbody id="fitnessTableCombined"></tbody>
             </table>
           </article>
         </section>
