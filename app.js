@@ -24,7 +24,7 @@ const FITNESS_SETTINGS_DEFAULTS = {
   playerContactPenalty: -0.01,
   hardCollisionPenalty: -1.5,
   possessionReward: 0.02,
-  proximityReward: 0.01,
+  proximityReward: 0,
   scoreDiffReward: 4,
 };
 const HARD_COLLISION_THRESHOLD = 1.5;
