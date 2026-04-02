@@ -81,7 +81,8 @@ const ui = {
   log: document.getElementById("log"),
 };
 
-const ctx = ui.canvas.getContext("2d");
+const supportsOffscreenCanvas = typeof ui.canvas.transferControlToOffscreen === "function";
+let ctx = supportsOffscreenCanvas ? null : ui.canvas.getContext("2d");
 
 const state = {
   showGames: true,
@@ -103,6 +104,8 @@ const state = {
   isPaused: false,
   showTimeIndicator: true,
   showFieldStripes: true,
+  useWorkerRenderer: supportsOffscreenCanvas,
+  offscreenTransferred: false,
 };
 
 let nextIndividualId = 0;
@@ -179,6 +182,11 @@ function handleWorkerMessage(event) {
   if (type === "ready") {
     postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
     postToWorker("setPaused", { isPaused: state.isPaused });
+    postToWorker("updateConfig", {
+      showGames: state.showGames,
+      showTimeIndicator: state.showTimeIndicator,
+      showFieldStripes: state.showFieldStripes,
+    });
     return;
   }
 
@@ -233,6 +241,32 @@ function ensureWorker() {
     console.error("Не удалось запустить Worker:", event);
     addLog("Ошибка запуска Worker. Симуляция не была перенесена в фоновый поток.");
   });
+
+  if (state.useWorkerRenderer && !state.offscreenTransferred) {
+    try {
+      const offscreenCanvas = ui.canvas.transferControlToOffscreen();
+      worker.postMessage(
+        {
+          type: "initCanvas",
+          canvas: offscreenCanvas,
+          payload: {
+            width: ui.canvas.width,
+            height: ui.canvas.height,
+          },
+        },
+        [offscreenCanvas],
+      );
+      state.offscreenTransferred = true;
+    } catch (error) {
+      console.error("OffscreenCanvas init failed:", error);
+      state.useWorkerRenderer = false;
+      if (!ctx) {
+        ctx = ui.canvas.getContext("2d");
+      }
+      addLog("OffscreenCanvas недоступен — используется обычная отрисовка.");
+    }
+  }
+
   state.worker = worker;
   return worker;
 }
@@ -1562,6 +1596,7 @@ function readConfig() {
 }
 
 function drawField() {
+  if (!ctx) return;
   ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
   if (state.showFieldStripes) {
@@ -1601,6 +1636,7 @@ function drawField() {
 }
 
 function drawMatch(match) {
+  if (!ctx) return;
   drawField();
 
   if (!match) {
@@ -1725,6 +1761,7 @@ function drawMatch(match) {
 }
 
 function drawCenterText(text) {
+  if (!ctx) return;
   ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
   ctx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
   ctx.fillStyle = "#ffffff";
@@ -1751,7 +1788,9 @@ function updateStats(frameTime = performance.now()) {
 
   updatePlaybackControls();
   updateMatchFitnessTables(status.currentMatch);
-  drawMatch(renderedMatch || status.currentMatch);
+  if (!state.useWorkerRenderer) {
+    drawMatch(renderedMatch || status.currentMatch);
+  }
 }
 
 function tick(timestamp) {
@@ -1811,6 +1850,7 @@ ui.fastBtn.addEventListener("click", () => {
 
 ui.showBtn.addEventListener("click", () => {
   state.showGames = true;
+  postToWorker("updateConfig", { showGames: true });
   addLog("Показ матчей включён.");
 });
 
@@ -1880,6 +1920,7 @@ window.addEventListener("pagehide", () => {
 
 ui.hideBtn.addEventListener("click", () => {
   state.showGames = false;
+  postToWorker("updateConfig", { showGames: false });
   addLog("Показ матчей отключён.");
 });
 

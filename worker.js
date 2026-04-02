@@ -4,6 +4,7 @@ const FIELD = {
   goalWidth: 20,
   playerRadius: 2,
   ballRadius: 1,
+  pxPerMeter: 10,
 };
 
 const INPUT_SIZE = 48;
@@ -23,6 +24,10 @@ const FITNESS_SETTINGS_DEFAULTS = {
   hardCollisionPenalty: -1.5,
 };
 const HARD_COLLISION_THRESHOLD = 1.5;
+const TEAM_COLORS = {
+  A: "#61a8ff",
+  B: "#ff8d6b",
+};
 
 const runtime = {
   trainer: null,
@@ -32,7 +37,19 @@ const runtime = {
   lastTickAt: null,
   lastStatusAt: 0,
   lastSaveAt: 0,
+  canvas: null,
+  ctx: null,
+  showGames: true,
+  showTimeIndicator: true,
+  showFieldStripes: true,
+  accumulator: 0,
+  previousRenderMatch: null,
+  currentRenderMatch: null,
 };
+
+const requestWorkerFrame = typeof self.requestAnimationFrame === "function"
+  ? self.requestAnimationFrame.bind(self)
+  : (callback) => setTimeout(() => callback(performance.now()), 16);
 
 let nextIndividualId = 0;
 let rngSeed = 1;
@@ -244,28 +261,295 @@ function emitStatus(force = false) {
   postMessage({ type: "status", payload });
 }
 
+function canInterpolateMatchStates(previousMatch, currentMatch) {
+  if (!previousMatch || !currentMatch) {
+    return false;
+  }
+
+  const previousA = previousMatch.individualAId ?? previousMatch.individualA?.id ?? null;
+  const previousB = previousMatch.individualBId ?? previousMatch.individualB?.id ?? null;
+  const currentA = currentMatch.individualAId ?? currentMatch.individualA?.id ?? null;
+  const currentB = currentMatch.individualBId ?? currentMatch.individualB?.id ?? null;
+
+  return previousA === currentA
+    && previousB === currentB
+    && (previousMatch.players?.length || 0) === (currentMatch.players?.length || 0)
+    && previousMatch.score?.A === currentMatch.score?.A
+    && previousMatch.score?.B === currentMatch.score?.B
+    && Boolean(previousMatch.done) === Boolean(currentMatch.done);
+}
+
+function interpolateMatchState(previousMatch, currentMatch, alpha) {
+  if (!canInterpolateMatchStates(previousMatch, currentMatch)) {
+    return currentMatch;
+  }
+
+  const t = clamp(alpha, 0, 1);
+  return {
+    ...currentMatch,
+    time: lerp(Number(previousMatch.time) || 0, Number(currentMatch.time) || 0, t),
+    ball: {
+      ...currentMatch.ball,
+      x: lerp(Number(previousMatch.ball?.x) || 0, Number(currentMatch.ball?.x) || 0, t),
+      y: lerp(Number(previousMatch.ball?.y) || 0, Number(currentMatch.ball?.y) || 0, t),
+      vx: lerp(Number(previousMatch.ball?.vx) || 0, Number(currentMatch.ball?.vx) || 0, t),
+      vy: lerp(Number(previousMatch.ball?.vy) || 0, Number(currentMatch.ball?.vy) || 0, t),
+    },
+    players: currentMatch.players.map((player, index) => {
+      const previousPlayer = previousMatch.players?.[index] || player;
+      const previousDir = Number(previousPlayer.dir) || 0;
+      const currentDir = Number(player.dir) || 0;
+      return {
+        ...player,
+        x: lerp(Number(previousPlayer.x) || 0, Number(player.x) || 0, t),
+        y: lerp(Number(previousPlayer.y) || 0, Number(player.y) || 0, t),
+        dir: normalizeAngle(previousDir + normalizeAngle(currentDir - previousDir) * t),
+      };
+    }),
+  };
+}
+
+function captureCurrentMatchState() {
+  const trainer = runtime.trainer;
+  return trainer?.currentMatch ? serializeMatchState(trainer.currentMatch, trainer.currentA, trainer.currentB) : null;
+}
+
+function drawCenterText(text) {
+  const ctx = runtime.ctx;
+  const canvas = runtime.canvas;
+  if (!ctx || !canvas) return;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 28px Inter, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  ctx.textAlign = "start";
+}
+
+function drawField() {
+  const ctx = runtime.ctx;
+  const canvas = runtime.canvas;
+  if (!ctx || !canvas) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (runtime.showFieldStripes) {
+    const stripeCount = 4;
+    const stripeWidth = canvas.width / stripeCount;
+    for (let i = 0; i < stripeCount; i += 1) {
+      ctx.fillStyle = i % 2 === 0 ? "#2f9f49" : "#23833b";
+      ctx.fillRect(i * stripeWidth, 0, stripeWidth + 1, canvas.height);
+    }
+  } else {
+    ctx.fillStyle = "#23833b";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
+  ctx.beginPath();
+  ctx.moveTo(canvas.width / 2, 0);
+  ctx.lineTo(canvas.width / 2, canvas.height);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(canvas.width / 2, canvas.height / 2, 90, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const goalHeightPx = FIELD.goalWidth * FIELD.pxPerMeter;
+  const goalTopPx = (canvas.height - goalHeightPx) / 2;
+
+  ctx.strokeRect(0, goalTopPx, 70, goalHeightPx);
+  ctx.strokeRect(canvas.width - 70, goalTopPx, 70, goalHeightPx);
+
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillRect(0, goalTopPx, 12, goalHeightPx);
+  ctx.fillRect(canvas.width - 12, goalTopPx, 12, goalHeightPx);
+}
+
+function drawPlayers(players) {
+  const ctx = runtime.ctx;
+  if (!ctx) return;
+
+  for (const player of players || []) {
+    const x = player.x * FIELD.pxPerMeter;
+    const y = player.y * FIELD.pxPerMeter;
+    const radius = player.radius * FIELD.pxPerMeter;
+
+    ctx.fillStyle = TEAM_COLORS[player.team];
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#082032";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(player.dir) * radius * 1.5, y + Math.sin(player.dir) * radius * 1.5);
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+  }
+}
+
+function drawBall(ball) {
+  const ctx = runtime.ctx;
+  if (!ctx || !ball) return;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(ball.x * FIELD.pxPerMeter, ball.y * FIELD.pxPerMeter, ball.radius * FIELD.pxPerMeter, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawMatch(match) {
+  const ctx = runtime.ctx;
+  const canvas = runtime.canvas;
+  if (!ctx || !canvas) return;
+
+  drawField();
+
+  if (!match) {
+    drawCenterText("Ожидание запуска обучения");
+    return;
+  }
+
+  if (!runtime.showGames) {
+    drawCenterText("Показ матчей отключён — обучение идёт в фоне");
+    return;
+  }
+
+  const ballSpeed = Math.hypot(match.ball?.vx || 0, match.ball?.vy || 0);
+  if (runtime.stepsPerFrame === FAST_STEPS && ballSpeed >= BALL_TRAIL_SPEED_THRESHOLD && match.ballTrail?.length > 1) {
+    for (let i = 1; i < match.ballTrail.length; i += 1) {
+      const prev = match.ballTrail[i - 1];
+      const curr = match.ballTrail[i];
+      const alpha = i / match.ballTrail.length;
+
+      ctx.beginPath();
+      ctx.moveTo(prev.x * FIELD.pxPerMeter, prev.y * FIELD.pxPerMeter);
+      ctx.lineTo(curr.x * FIELD.pxPerMeter, curr.y * FIELD.pxPerMeter);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + alpha * 0.45})`;
+      ctx.lineWidth = 1.5 + alpha * 2.5;
+      ctx.stroke();
+    }
+  }
+
+  drawPlayers(match.players);
+  drawBall(match.ball);
+
+  const totalSeconds = Math.max(1, Number(match.duration) || 1);
+  const progress = clamp((Number(match.time) || 0) / totalSeconds, 0, 1);
+  const overlayX = 14;
+  const overlayY = 14;
+  const overlayGap = 4;
+  const overlayTotalWidth = canvas.width * 0.25;
+  const scoreBoxHeight = 40;
+  const timeBoxHeight = 40;
+  const scoreBoxX = overlayX;
+  const scoreBoxY = overlayY;
+  const scoreCenterY = scoreBoxY + scoreBoxHeight / 2;
+  const scoreText = `${match.score.A} : ${match.score.B}`;
+
+  ctx.font = "bold 20px Inter, sans-serif";
+  const scoreBoxWidth = Math.max(40, Math.ceil(ctx.measureText(scoreText).width + 18));
+  const baseTimeBoxWidth = Math.max(28, overlayTotalWidth - scoreBoxWidth - overlayGap);
+  const timeBoxWidth = Math.max(18, Math.round(baseTimeBoxWidth * 0.6));
+
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  ctx.fillRect(scoreBoxX, scoreBoxY, scoreBoxWidth, scoreBoxHeight);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 20px Inter, sans-serif";
+  ctx.fillText(scoreText, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 0.5);
+
+  if (runtime.showTimeIndicator) {
+    const timeBoxX = scoreBoxX + scoreBoxWidth + overlayGap;
+    const timeBoxY = overlayY;
+    const timeBarX = timeBoxX + 4;
+    const timeBarY = timeBoxY + 8;
+    const timeBarWidth = Math.max(18, timeBoxWidth - 8);
+    const timeBarHeight = timeBoxHeight - 16;
+    const fillWidth = timeBarWidth * progress;
+
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fillRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(timeBarX, timeBarY, fillWidth, timeBarHeight);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(timeBarX, timeBarY, fillWidth, timeBarHeight);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(255,255,255,0.26)";
+    ctx.lineWidth = 4;
+    for (let stripeX = timeBarX - timeBarHeight; stripeX < timeBarX + fillWidth + timeBarHeight; stripeX += 12) {
+      ctx.beginPath();
+      ctx.moveTo(stripeX, timeBarY + timeBarHeight);
+      ctx.lineTo(stripeX + timeBarHeight, timeBarY);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
+  }
+
+  ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
+}
+
+function renderFrame(now) {
+  if (runtime.lastTickAt === null) {
+    runtime.lastTickAt = now;
+  }
+
+  const elapsedSeconds = clamp((now - runtime.lastTickAt) / 1000, 0, 0.1);
+  runtime.lastTickAt = now;
+
+  if (!runtime.currentRenderMatch) {
+    runtime.currentRenderMatch = captureCurrentMatchState();
+  }
+
+  if (runtime.trainer?.running && !runtime.isPaused) {
+    runtime.accumulator += elapsedSeconds * runtime.stepsPerFrame;
+    let safety = 0;
+
+    while (runtime.accumulator >= STEP_DT && runtime.trainer?.running && safety < 5000) {
+      runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
+      runtime.trainer.step(STEP_DT);
+      runtime.currentRenderMatch = captureCurrentMatchState();
+      runtime.accumulator -= STEP_DT;
+      safety += 1;
+    }
+
+    emitSaveData(false);
+  }
+
+  const alpha = clamp(runtime.accumulator / STEP_DT, 0, 1);
+  const matchForRender = interpolateMatchState(runtime.previousRenderMatch, runtime.currentRenderMatch, alpha);
+  drawMatch(matchForRender || runtime.currentRenderMatch);
+  emitStatus(false);
+
+  runtime.loopId = requestWorkerFrame(renderFrame);
+}
+
 function ensureLoop() {
   if (runtime.loopId !== null) {
     return;
   }
 
-  runtime.lastTickAt = performance.now();
-  runtime.loopId = setInterval(() => {
-    const now = performance.now();
-    if (runtime.lastTickAt === null) {
-      runtime.lastTickAt = now;
-    }
-
-    const elapsedSeconds = clamp((now - runtime.lastTickAt) / 1000, 0, 0.1);
-    runtime.lastTickAt = now;
-
-    if (runtime.trainer?.running && !runtime.isPaused) {
-      runtime.trainer.step(elapsedSeconds * runtime.stepsPerFrame);
-      emitSaveData(false);
-    }
-
-    emitStatus(false);
-  }, 16);
+  runtime.lastTickAt = null;
+  runtime.loopId = requestWorkerFrame(renderFrame);
 }
 
 class NeuralNetwork {
@@ -1124,15 +1408,29 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
 }
 
 self.onmessage = (event) => {
-  const { type, payload = {} } = event.data || {};
+  const { type, payload = {}, canvas } = event.data || {};
 
   try {
     switch (type) {
+      case "initCanvas": {
+        runtime.canvas = canvas || runtime.canvas;
+        if (runtime.canvas && payload?.width && payload?.height) {
+          runtime.canvas.width = payload.width;
+          runtime.canvas.height = payload.height;
+          runtime.ctx = runtime.canvas.getContext("2d", { alpha: false, desynchronized: true });
+          drawMatch(runtime.currentRenderMatch);
+        }
+        break;
+      }
       case "startNew": {
         nextIndividualId = payload.resetIds ? 0 : nextIndividualId;
         runtime.trainer = new EvolutionTrainer(emitLog);
         runtime.isPaused = false;
+        runtime.accumulator = 0;
+        runtime.previousRenderMatch = null;
+        runtime.currentRenderMatch = null;
         runtime.trainer.start(payload.config || {});
+        runtime.currentRenderMatch = captureCurrentMatchState();
         runtime.lastTickAt = performance.now();
         emitStatus(true);
         emitSaveData(true);
@@ -1141,7 +1439,11 @@ self.onmessage = (event) => {
       case "loadSaved": {
         runtime.trainer = new EvolutionTrainer(emitLog);
         runtime.isPaused = false;
+        runtime.accumulator = 0;
+        runtime.previousRenderMatch = null;
+        runtime.currentRenderMatch = null;
         runtime.trainer.start(payload.config || {}, payload.savedData || null);
+        runtime.currentRenderMatch = captureCurrentMatchState();
         runtime.lastTickAt = performance.now();
         emitStatus(true);
         emitSaveData(true);
@@ -1174,6 +1476,7 @@ self.onmessage = (event) => {
       case "updateMatchDuration": {
         if (runtime.trainer?.running) {
           runtime.trainer.updateMatchDuration(payload.matchMinutes);
+          runtime.currentRenderMatch = captureCurrentMatchState();
           emitStatus(true);
           emitSaveData(true);
         }
@@ -1182,15 +1485,27 @@ self.onmessage = (event) => {
       case "skipMatch": {
         if (runtime.trainer?.running) {
           runtime.trainer.skipCurrentMatch();
+          runtime.currentRenderMatch = captureCurrentMatchState();
           emitStatus(true);
           emitSaveData(true);
         }
         break;
       }
       case "updateConfig": {
-        if (runtime.trainer?.config && payload && typeof payload === "object") {
-          Object.assign(runtime.trainer.config, payload);
-          emitSaveData(true);
+        if (payload && typeof payload === "object") {
+          if (Object.hasOwn(payload, "showGames")) {
+            runtime.showGames = Boolean(payload.showGames);
+          }
+          if (Object.hasOwn(payload, "showTimeIndicator")) {
+            runtime.showTimeIndicator = payload.showTimeIndicator !== false;
+          }
+          if (Object.hasOwn(payload, "showFieldStripes")) {
+            runtime.showFieldStripes = payload.showFieldStripes !== false;
+          }
+          if (runtime.trainer?.config) {
+            Object.assign(runtime.trainer.config, payload);
+            emitSaveData(true);
+          }
         }
         break;
       }
