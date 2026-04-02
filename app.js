@@ -14,7 +14,7 @@ const MAX_SIGHT = 42;
 const MAX_PLAYER_SPEED = 12;
 const STEP_DT = 0.08;
 const FAST_STEPS = 24;
-const SLOW_STEPS = 2;
+const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 
 const TEAM_COLORS = {
@@ -34,6 +34,7 @@ const ui = {
   fastBtn: document.getElementById("fastBtn"),
   showBtn: document.getElementById("showBtn"),
   hideBtn: document.getElementById("hideBtn"),
+  skipBtn: document.getElementById("skipBtn"),
   generation: document.getElementById("generation"),
   matchInfo: document.getElementById("matchInfo"),
   bestFitness: document.getElementById("bestFitness"),
@@ -49,6 +50,7 @@ const state = {
   stepsPerFrame: SLOW_STEPS,
   mode: "Медленный",
   trainer: null,
+  lastFrameTime: null,
 };
 
 const logs = [
@@ -546,26 +548,58 @@ class EvolutionTrainer {
     this.currentMatch = new FootballMatch(this.currentA, this.currentB, this.config, this.onLog);
   }
 
-  step(iterations) {
-    if (!this.running || !this.currentMatch) return;
+  step(simulationSeconds) {
+    if (!this.running || !this.currentMatch || simulationSeconds <= 0) return;
 
-    for (let i = 0; i < iterations; i += 1) {
-      this.currentMatch.step(STEP_DT);
+    let remaining = simulationSeconds;
+    let safety = 0;
+
+    while (remaining > 0 && this.running && this.currentMatch && safety < 5000) {
+      const dt = Math.min(STEP_DT, remaining);
+      this.currentMatch.step(dt);
+      remaining -= dt;
+      safety += 1;
 
       if (this.currentMatch.done) {
-        this.currentA.fitness += this.currentMatch.teamFitness.A;
-        this.currentB.fitness += this.currentMatch.teamFitness.B;
-
-        this.bestFitness = Math.max(this.bestFitness, this.currentA.fitness, this.currentB.fitness);
-        this.matchCursor += 1;
-
-        if (this.matchCursor >= this.schedule.length) {
-          this.finishGeneration();
-        } else {
-          this.loadNextMatch();
-        }
+        this.completeCurrentMatch();
       }
     }
+  }
+
+  completeCurrentMatch() {
+    this.currentA.fitness += this.currentMatch.teamFitness.A;
+    this.currentB.fitness += this.currentMatch.teamFitness.B;
+
+    this.bestFitness = Math.max(this.bestFitness, this.currentA.fitness, this.currentB.fitness);
+    this.matchCursor += 1;
+
+    if (this.matchCursor >= this.schedule.length) {
+      this.finishGeneration();
+    } else {
+      this.loadNextMatch();
+    }
+  }
+
+  skipCurrentMatch() {
+    if (!this.running || !this.currentMatch) {
+      return false;
+    }
+
+    const skippedLabel = `${this.currentA.id} vs ${this.currentB.id}`;
+    let safety = 0;
+
+    while (this.currentMatch && !this.currentMatch.done && safety < 20000) {
+      this.currentMatch.step(STEP_DT);
+      safety += 1;
+    }
+
+    if (this.currentMatch?.done) {
+      this.completeCurrentMatch();
+      this.onLog(`Матч ${skippedLabel} пропущен. Открыт следующий матч.`);
+      return true;
+    }
+
+    return false;
   }
 
   finishGeneration() {
@@ -866,9 +900,16 @@ function updateStats() {
   drawMatch(status.currentMatch);
 }
 
-function tick() {
+function tick(timestamp) {
+  if (state.lastFrameTime === null) {
+    state.lastFrameTime = timestamp;
+  }
+
+  const elapsedSeconds = clamp((timestamp - state.lastFrameTime) / 1000, 0, 0.1);
+  state.lastFrameTime = timestamp;
+
   if (state.trainer?.running) {
-    state.trainer.step(state.stepsPerFrame);
+    state.trainer.step(elapsedSeconds * state.stepsPerFrame);
   }
 
   updateStats();
@@ -879,18 +920,21 @@ ui.startBtn.addEventListener("click", () => {
   const trainer = new EvolutionTrainer(addLog);
   trainer.start(readConfig());
   state.trainer = trainer;
+  state.lastFrameTime = performance.now();
   addLog("Обучение запущено.");
 });
 
 ui.slowBtn.addEventListener("click", () => {
   state.stepsPerFrame = SLOW_STEPS;
   state.mode = "Медленный";
-  addLog("Включён медленный режим.");
+  state.lastFrameTime = performance.now();
+  addLog("Включён медленный режим реального времени.");
 });
 
 ui.fastBtn.addEventListener("click", () => {
   state.stepsPerFrame = FAST_STEPS;
   state.mode = "Быстрый";
+  state.lastFrameTime = performance.now();
   addLog("Включён быстрый режим.");
 });
 
@@ -904,6 +948,16 @@ ui.hideBtn.addEventListener("click", () => {
   addLog("Показ матчей отключён.");
 });
 
+ui.skipBtn.addEventListener("click", () => {
+  if (!state.trainer?.running) {
+    addLog("Сейчас нет активного матча для пропуска.");
+    return;
+  }
+
+  state.trainer.skipCurrentMatch();
+  state.lastFrameTime = performance.now();
+});
+
 updateStats();
 ui.log.textContent = logs.join("\n");
-tick();
+requestAnimationFrame(tick);

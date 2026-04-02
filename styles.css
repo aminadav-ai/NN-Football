@@ -137,9 +137,17 @@ button.primary {
 }
 
 .pitch-wrap {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
   padding: 16px;
+}
+
+.skip-btn {
+  min-width: 220px;
+  background: linear-gradient(135deg, #324c62, #1e3142);
 }
 
 canvas {
