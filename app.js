@@ -1473,29 +1473,27 @@ function drawMatch(match) {
 
   const overlayX = 14;
   const overlayY = 14;
-  const overlayGap = 6;
+  const overlayGap = 4;
   const overlayTotalWidth = ui.canvas.width * 0.25;
-  const scoreBoxWidth = overlayTotalWidth * 0.7;
-  const timeBoxWidth = overlayTotalWidth * 0.3 - overlayGap;
   const scoreBoxHeight = 40;
   const timeBoxHeight = 40;
   const scoreBoxX = overlayX;
   const scoreBoxY = overlayY;
   const scoreCenterY = scoreBoxY + scoreBoxHeight / 2;
+  const scoreText = `${match.score.A}:${match.score.B}`;
+
+  ctx.font = "bold 20px Inter, sans-serif";
+  const scoreBoxWidth = Math.max(40, Math.ceil(ctx.measureText(scoreText).width + 18));
+  const baseTimeBoxWidth = Math.max(28, overlayTotalWidth - scoreBoxWidth - overlayGap);
+  const timeBoxWidth = Math.max(18, Math.round(baseTimeBoxWidth * 0.6));
 
   ctx.fillStyle = "rgba(0,0,0,0.38)";
   ctx.fillRect(scoreBoxX, scoreBoxY, scoreBoxWidth, scoreBoxHeight);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 11px Inter, sans-serif";
-  ctx.fillStyle = TEAM_COLORS.A;
-  ctx.fillText(`#${match.individualA.id}`, scoreBoxX + 18, scoreCenterY + 0.5);
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 20px Inter, sans-serif";
-  ctx.fillText(`${match.score.A}:${match.score.B}`, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 0.5);
-  ctx.fillStyle = TEAM_COLORS.B;
-  ctx.font = "bold 11px Inter, sans-serif";
-  ctx.fillText(`#${match.individualB.id}`, scoreBoxX + scoreBoxWidth - 18, scoreCenterY + 0.5);
+  ctx.fillText(scoreText, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 0.5);
 
   const timeBoxX = scoreBoxX + scoreBoxWidth + overlayGap;
   const timeBoxY = overlayY;
