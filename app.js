@@ -205,7 +205,7 @@ class FootballMatch {
     this.config = config;
     this.onEvent = onEvent;
     this.time = 0;
-    this.duration = Math.max(15, (config.matchMinutes || 1) * 60);
+    this.duration = 60;
     this.done = false;
     this.teamFitness = { A: 0, B: 0 };
     this.score = { A: 0, B: 0 };
@@ -225,7 +225,16 @@ class FootballMatch {
     };
 
     this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
+    this.setDurationMinutes(config.matchMinutes || 10);
     this.spawnPlayers();
+  }
+
+  setDurationMinutes(matchMinutes) {
+    this.duration = Math.max(60, clamp(Math.round(matchMinutes || 10), 1, 10) * 60);
+
+    if (this.time >= this.duration) {
+      this.finish();
+    }
   }
 
   spawnPlayers() {
@@ -580,6 +589,28 @@ class EvolutionTrainer {
     }
   }
 
+  updateMatchDuration(matchMinutes) {
+    if (!this.config) {
+      return 10;
+    }
+
+    const minutes = clamp(Math.round(matchMinutes || 10), 1, 10);
+    this.config.matchMinutes = minutes;
+
+    if (this.currentMatch) {
+      this.currentMatch.setDurationMinutes(minutes);
+
+      if (this.currentMatch.done) {
+        this.onLog(`Длительность снижена до ${minutes} мин. Текущий матч завершён досрочно.`);
+        this.completeCurrentMatch();
+        return minutes;
+      }
+    }
+
+    this.onLog(`Длительность текущего и следующих матчей: ${minutes} мин.`);
+    return minutes;
+  }
+
   skipCurrentMatch() {
     if (!this.running || !this.currentMatch) {
       return false;
@@ -771,7 +802,7 @@ function readConfig() {
     hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 2, 1, 4),
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 64),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
-    matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 1), 1, 10),
+    matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
   };
 }
 
@@ -946,6 +977,18 @@ ui.showBtn.addEventListener("click", () => {
 ui.hideBtn.addEventListener("click", () => {
   state.showGames = false;
   addLog("Показ матчей отключён.");
+});
+
+ui.matchMinutes.addEventListener("change", () => {
+  const minutes = clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10);
+  ui.matchMinutes.value = String(minutes);
+
+  if (state.trainer?.running) {
+    state.trainer.updateMatchDuration(minutes);
+    state.lastFrameTime = performance.now();
+  } else {
+    addLog(`Длительность новых матчей установлена: ${minutes} мин.`);
+  }
 });
 
 ui.skipBtn.addEventListener("click", () => {
