@@ -17,6 +17,9 @@ const FAST_STEPS = 24;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const BALL_PROXIMITY_REWARD = 0.01;
+const PLAYER_CONTACT_PENALTY = 0.01;
+const HARD_COLLISION_THRESHOLD = 1.5;
+const HARD_COLLISION_PENALTY = 1.5;
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -413,10 +416,14 @@ class FootballMatch {
       for (let j = i + 1; j < this.players.length; j += 1) {
         const a = this.players[i];
         const b = this.players[j];
-        const { impact, initiator } = resolveElasticCollision(a, b, 0.88);
+        const { touching, impact, initiator } = resolveElasticCollision(a, b, 0.88);
 
-        if (impact > 1.5 && initiator) {
-          this.teamFitness[initiator.team] -= 1.5;
+        if (touching && initiator) {
+          this.teamFitness[initiator.team] -= PLAYER_CONTACT_PENALTY;
+        }
+
+        if (impact > HARD_COLLISION_THRESHOLD && initiator) {
+          this.teamFitness[initiator.team] -= HARD_COLLISION_PENALTY;
         }
       }
     }
@@ -816,7 +823,7 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   const minDistance = a.radius + b.radius;
 
   if (distance >= minDistance) {
-    return { impact: 0, initiator: null };
+    return { touching: false, impact: 0, initiator: null };
   }
 
   const nx = dx / distance;
@@ -842,7 +849,7 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
 
   const relVel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
   if (relVel >= 0) {
-    return { impact: 0, initiator };
+    return { touching: true, impact: 0, initiator };
   }
 
   const impulse = (-(1 + elasticity) * relVel) / 2;
@@ -851,7 +858,7 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   b.vx += impulse * nx;
   b.vy += impulse * ny;
 
-  return { impact: Math.abs(relVel), initiator };
+  return { touching: true, impact: Math.abs(relVel), initiator };
 }
 
 function readConfig() {
