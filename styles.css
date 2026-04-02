@@ -164,6 +164,10 @@ button.secondary-action {
   margin-top: 16px;
 }
 
+.stats-inline {
+  margin-top: 0;
+}
+
 .fitness-settings {
   overflow: hidden;
 }
@@ -275,7 +279,8 @@ button.secondary-action {
   width: 280px;
   min-width: 280px;
   max-width: 280px;
-  display: block;
+  display: grid;
+  gap: 14px;
   align-self: flex-start;
   flex: 0 0 280px;
 }
