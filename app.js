@@ -1044,11 +1044,13 @@ class FootballMatch {
     this.ball.vx *= 0.992;
     this.ball.vy *= 0.992;
 
+    const ballSpeed = Math.hypot(this.ball.vx, this.ball.vy);
     const inCorner = (
       (this.ball.x - this.ball.radius <= 0 || this.ball.x + this.ball.radius >= FIELD.width)
       && (this.ball.y - this.ball.radius <= 0 || this.ball.y + this.ball.radius >= FIELD.height)
     );
-    if (inCorner) {
+    const stuckInCorner = inCorner && ballSpeed < 0.35;
+    if (stuckInCorner) {
       this.resetBallToCenter();
       return;
     }
