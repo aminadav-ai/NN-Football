@@ -332,6 +332,7 @@ function savePopulation(trainer = state.trainer) {
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
     nextIndividualId,
+    pitchWidth: state.pitchWidth,
     logs: [...logs],
     config: trainer.config
       ? {
@@ -389,6 +390,10 @@ function loadPopulation() {
     state.savedPopulationData = payload;
     if (payload.config) {
       setControlsFromConfig(payload.config);
+    }
+    if (Number.isFinite(payload.pitchWidth)) {
+      state.pitchWidth = payload.pitchWidth;
+      applyPitchWidth();
     }
     if (Array.isArray(payload.logs) && payload.logs.length) {
       logs.length = 0;
