@@ -971,6 +971,18 @@ function drawMatch(match) {
   ctx.fillText(`${match.score.A} : ${match.score.B}`, 32, 40);
   ctx.font = "14px Inter, sans-serif";
   ctx.fillText(`t = ${match.time.toFixed(1)} / ${match.duration} c`, 32, 60);
+
+  const fitnessBoxWidth = 300;
+  const fitnessBoxX = (ui.canvas.width - fitnessBoxWidth) / 2;
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  ctx.fillRect(fitnessBoxX, 14, fitnessBoxWidth, 56);
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.font = "bold 22px Inter, sans-serif";
+  ctx.fillText(`${match.teamFitness.A.toFixed(2)} : ${match.teamFitness.B.toFixed(2)}`, ui.canvas.width / 2, 40);
+  ctx.font = "14px Inter, sans-serif";
+  ctx.fillText("Фитнес за матч", ui.canvas.width / 2, 60);
+  ctx.textAlign = "start";
 }
 
 function drawCenterText(text) {
