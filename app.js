@@ -1480,7 +1480,7 @@ function drawMatch(match) {
   const scoreBoxX = overlayX;
   const scoreBoxY = overlayY;
   const scoreCenterY = scoreBoxY + scoreBoxHeight / 2;
-  const scoreText = `${match.score.A}:${match.score.B}`;
+  const scoreText = `${match.score.A} : ${match.score.B}`;
 
   ctx.font = "bold 20px Inter, sans-serif";
   const scoreBoxWidth = Math.max(40, Math.ceil(ctx.measureText(scoreText).width + 18));
