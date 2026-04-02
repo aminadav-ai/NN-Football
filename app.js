@@ -16,6 +16,7 @@ const STEP_DT = 0.08;
 const FAST_STEPS = 24;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
+const BALL_PROXIMITY_REWARD = 0.01;
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -299,6 +300,7 @@ class FootballMatch {
 
     this.handlePlayerCollisions();
     this.updateBall(dt);
+    this.rewardBallProximity();
 
     if (this.ball.lastTouchTeam && this.time - this.ball.lastTouchAt < 1.2) {
       this.teamFitness[this.ball.lastTouchTeam] += 0.02;
@@ -315,6 +317,30 @@ class FootballMatch {
     const diff = this.score.A - this.score.B;
     this.teamFitness.A += diff * 4;
     this.teamFitness.B -= diff * 4;
+  }
+
+  rewardBallProximity() {
+    let closestA = Infinity;
+    let closestB = Infinity;
+
+    for (const player of this.players) {
+      const distance = Math.hypot(player.x - this.ball.x, player.y - this.ball.y);
+      if (player.team === "A") {
+        closestA = Math.min(closestA, distance);
+      } else {
+        closestB = Math.min(closestB, distance);
+      }
+    }
+
+    if (Math.abs(closestA - closestB) < 0.001) {
+      return;
+    }
+
+    if (closestA < closestB) {
+      this.teamFitness.A += BALL_PROXIMITY_REWARD;
+    } else {
+      this.teamFitness.B += BALL_PROXIMITY_REWARD;
+    }
   }
 
   controlPlayer(player, dt) {
