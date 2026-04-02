@@ -67,6 +67,7 @@ const ui = {
   pauseBtn: document.getElementById("pauseBtn"),
   skipBtn: document.getElementById("skipBtn"),
   showTimeToggle: document.getElementById("showTimeToggle"),
+  showFieldStripesToggle: document.getElementById("showFieldStripesToggle"),
   fitnessPanels: document.getElementById("fitnessPanels"),
   fitnessHeaderA: document.getElementById("fitnessHeaderA"),
   fitnessHeaderB: document.getElementById("fitnessHeaderB"),
@@ -94,6 +95,7 @@ const state = {
   sidebarCollapsed: true,
   isPaused: false,
   showTimeIndicator: true,
+  showFieldStripes: true,
 };
 
 let nextIndividualId = 1;
@@ -249,6 +251,8 @@ function setControlsFromConfig(config) {
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
   ui.showTimeToggle.checked = config.showTimeIndicator !== false;
   state.showTimeIndicator = ui.showTimeToggle.checked;
+  ui.showFieldStripesToggle.checked = config.showFieldStripes !== false;
+  state.showFieldStripes = ui.showFieldStripesToggle.checked;
 
   const fitnessSettings = normalizeFitnessSettings(config.fitnessSettings);
   ui.fitnessBallTouch.value = String(fitnessSettings.ballTouchReward);
@@ -348,6 +352,7 @@ function savePopulation(trainer = state.trainer) {
           ...trainer.config,
           populationSize: trainer.population.length,
           showTimeIndicator: state.showTimeIndicator,
+          showFieldStripes: state.showFieldStripes,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
         }
       : null,
@@ -1386,6 +1391,7 @@ function readConfig() {
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
     showTimeIndicator: ui.showTimeToggle.checked,
+    showFieldStripes: ui.showFieldStripesToggle.checked,
     fitnessSettings: readFitnessSettings(),
   };
 }
@@ -1393,11 +1399,16 @@ function readConfig() {
 function drawField() {
   ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
-  const stripeCount = 10;
-  const stripeWidth = ui.canvas.width / stripeCount;
-  for (let i = 0; i < stripeCount; i += 1) {
-    ctx.fillStyle = i % 2 === 0 ? "#2f9f49" : "#23833b";
-    ctx.fillRect(i * stripeWidth, 0, stripeWidth + 1, ui.canvas.height);
+  if (state.showFieldStripes) {
+    const stripeCount = 10;
+    const stripeWidth = ui.canvas.width / stripeCount;
+    for (let i = 0; i < stripeCount; i += 1) {
+      ctx.fillStyle = i % 2 === 0 ? "#2f9f49" : "#23833b";
+      ctx.fillRect(i * stripeWidth, 0, stripeWidth + 1, ui.canvas.height);
+    }
+  } else {
+    ctx.fillStyle = "#23833b";
+    ctx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
   }
 
   ctx.strokeStyle = "rgba(255,255,255,0.9)";
@@ -1660,6 +1671,15 @@ ui.showTimeToggle.addEventListener("change", () => {
     savePopulation(state.trainer);
   }
   addLog(state.showTimeIndicator ? "Индикатор времени матча включён." : "Индикатор времени матча скрыт.");
+});
+
+ui.showFieldStripesToggle.addEventListener("change", () => {
+  state.showFieldStripes = ui.showFieldStripesToggle.checked;
+  if (state.trainer?.config) {
+    state.trainer.config.showFieldStripes = state.showFieldStripes;
+    savePopulation(state.trainer);
+  }
+  addLog(state.showFieldStripes ? "Полосы на поле включены." : "Полосы на поле скрыты.");
 });
 
 ui.sidebarToggle.addEventListener("click", () => {
