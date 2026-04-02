@@ -94,7 +94,6 @@ const state = {
   pitchWidth: 550,
   pitchResize: null,
   savedPopulationData: null,
-  selectedPlayer: null,
 };
 
 let nextIndividualId = 1;
@@ -1397,102 +1396,6 @@ function readConfig() {
   };
 }
 
-function getSelectedPlayer(match) {
-  if (!state.selectedPlayer) {
-    return null;
-  }
-
-  if (state.selectedPlayer.match !== match) {
-    state.selectedPlayer = null;
-    return null;
-  }
-
-  const player = match.players[state.selectedPlayer.index];
-  if (!player || player.team !== state.selectedPlayer.team) {
-    state.selectedPlayer = null;
-    return null;
-  }
-
-  return player;
-}
-
-function drawSelectedPlayerVision(player) {
-  const x = player.x * FIELD.pxPerMeter;
-  const y = player.y * FIELD.pxPerMeter;
-  const radius = MAX_SIGHT * FIELD.pxPerMeter;
-  const playerRadius = player.radius * FIELD.pxPerMeter;
-  const color = player.team === "A" ? "97, 168, 255" : "255, 141, 107";
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(${color}, 0.08)`;
-  ctx.fill();
-  ctx.strokeStyle = `rgba(${color}, 0.65)`;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([10, 8]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.beginPath();
-  ctx.arc(x, y, playerRadius + 5, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(255,255,255,0.95)";
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function selectPlayerFromCanvas(event) {
-  if (state.stepsPerFrame !== SLOW_STEPS || !state.showGames) {
-    return;
-  }
-
-  const match = state.trainer?.currentMatch;
-  if (!match || match.done) {
-    state.selectedPlayer = null;
-    return;
-  }
-
-  const rect = ui.canvas.getBoundingClientRect();
-  const scaleX = ui.canvas.width / rect.width;
-  const scaleY = ui.canvas.height / rect.height;
-  const canvasX = (event.clientX - rect.left) * scaleX;
-  const canvasY = (event.clientY - rect.top) * scaleY;
-
-  let bestIndex = -1;
-  let bestDistance = Infinity;
-
-  for (let i = 0; i < match.players.length; i += 1) {
-    const player = match.players[i];
-    const px = player.x * FIELD.pxPerMeter;
-    const py = player.y * FIELD.pxPerMeter;
-    const distance = Math.hypot(canvasX - px, canvasY - py);
-
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = i;
-    }
-  }
-
-  if (bestIndex === -1 || bestDistance > 24) {
-    state.selectedPlayer = null;
-    return;
-  }
-
-  const player = match.players[bestIndex];
-  const teamSlot = match.players
-    .slice(0, bestIndex + 1)
-    .filter((candidate) => candidate.team === player.team).length;
-
-  state.selectedPlayer = {
-    match,
-    index: bestIndex,
-    team: player.team,
-  };
-
-  addLog(`Выбран игрок ${player.team}-${teamSlot}. Радиус зрения: ${MAX_SIGHT}.`);
-}
-
 function drawField() {
   ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
@@ -1536,8 +1439,6 @@ function drawMatch(match) {
     return;
   }
 
-  const selectedPlayer = getSelectedPlayer(match);
-
   const ballSpeed = Math.hypot(match.ball.vx, match.ball.vy);
   if (
     state.stepsPerFrame === FAST_STEPS &&
@@ -1556,10 +1457,6 @@ function drawMatch(match) {
       ctx.lineWidth = 1.5 + alpha * 2.5;
       ctx.stroke();
     }
-  }
-
-  if (selectedPlayer && state.stepsPerFrame === SLOW_STEPS) {
-    drawSelectedPlayerVision(selectedPlayer);
   }
 
   for (const player of match.players) {
@@ -1656,7 +1553,6 @@ function tick(timestamp) {
 ui.startBtn.addEventListener("click", () => {
   const trainer = new EvolutionTrainer(addLog);
   state.trainer = trainer;
-  state.selectedPlayer = null;
   trainer.start(readConfig());
   state.lastFrameTime = performance.now();
   addLog("Новое обучение запущено со случайной популяцией.");
@@ -1675,7 +1571,6 @@ ui.loadBtn.addEventListener("click", () => {
 
   const trainer = new EvolutionTrainer(addLog);
   state.trainer = trainer;
-  state.selectedPlayer = null;
   trainer.start(readConfig(), savedData);
   state.lastFrameTime = performance.now();
   addLog("Продолжено обучение из последнего сохранения.");
@@ -1691,7 +1586,6 @@ ui.slowBtn.addEventListener("click", () => {
 ui.fastBtn.addEventListener("click", () => {
   state.stepsPerFrame = FAST_STEPS;
   state.mode = "Быстрый";
-  state.selectedPlayer = null;
   state.lastFrameTime = performance.now();
   addLog("Включён быстрый режим.");
 });
@@ -1717,7 +1611,6 @@ ui.showBtn.addEventListener("click", () => {
   });
 });
 
-ui.canvas.addEventListener("click", selectPlayerFromCanvas);
 ui.pitchStage.addEventListener("pointerdown", startPitchResize);
 ui.pitchStage.addEventListener("pointermove", updatePitchResizeCursor);
 ui.pitchStage.addEventListener("pointerleave", () => {
