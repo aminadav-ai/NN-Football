@@ -98,7 +98,7 @@ const state = {
   showFieldStripes: true,
 };
 
-let nextIndividualId = 1;
+let nextIndividualId = 0;
 let rngSeed = 1;
 
 function setRandomSeed(seed = Date.now()) {
@@ -1606,6 +1606,7 @@ function tick(timestamp) {
 
 ui.startBtn.addEventListener("click", () => {
   clearLogs();
+  nextIndividualId = 0;
   const trainer = new EvolutionTrainer(addLog);
   state.trainer = trainer;
   state.isPaused = false;
