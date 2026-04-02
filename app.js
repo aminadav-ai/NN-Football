@@ -22,6 +22,7 @@ const PLAYER_CONTACT_PENALTY = 0.01;
 const HARD_COLLISION_THRESHOLD = 1.5;
 const HARD_COLLISION_PENALTY = 1.5;
 const MAX_LOG_ENTRIES = 500;
+const POPULATION_STORAGE_KEY = "flower-3.population.v1";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -37,6 +38,7 @@ const ui = {
   populationSize: document.getElementById("populationSize"),
   matchMinutes: document.getElementById("matchMinutes"),
   startBtn: document.getElementById("startBtn"),
+  loadBtn: document.getElementById("loadBtn"),
   slowBtn: document.getElementById("slowBtn"),
   fastBtn: document.getElementById("fastBtn"),
   showBtn: document.getElementById("showBtn"),
@@ -47,6 +49,7 @@ const ui = {
   bestFitness: document.getElementById("bestFitness"),
   modeInfo: document.getElementById("modeInfo"),
   renderInfo: document.getElementById("renderInfo"),
+  saveStatus: document.getElementById("saveStatus"),
   log: document.getElementById("log"),
 };
 
@@ -60,6 +63,7 @@ const state = {
   lastFrameTime: null,
   pitchWidth: 550,
   pitchResize: null,
+  savedPopulationData: null,
 };
 
 let nextIndividualId = 1;
@@ -83,7 +87,7 @@ const initialRandomSeed = setRandomSeed(Date.now());
 const logs = [
   "Flower-3 готов к обучению.",
   `Генератор случайных чисел инициализирован по времени: ${initialRandomSeed}.`,
-  "Нажмите «Запустить обучение», чтобы начать эволюцию популяции.",
+  "Нажмите «Новое обучение» или загрузите последнее сохранение.",
 ];
 
 function clamp(value, min, max) {
@@ -119,6 +123,122 @@ function addLog(message) {
     logs.length = MAX_LOG_ENTRIES;
   }
   ui.log.textContent = logs.join("\n");
+}
+
+function setControlsFromConfig(config) {
+  if (!config) return;
+
+  ui.teamSize.value = String(clamp(Number(config.teamSize) || 4, 1, 8));
+  ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 2, 1, 4));
+  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 64));
+  ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
+  ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
+}
+
+function serializeNetwork(network) {
+  return {
+    layerSizes: [...network.layerSizes],
+    weights: network.weights.map((layer) => layer.map((row) => [...row])),
+    biases: network.biases.map((layer) => [...layer]),
+  };
+}
+
+function deserializeNetwork(data) {
+  if (!data || !Array.isArray(data.layerSizes) || !Array.isArray(data.weights) || !Array.isArray(data.biases)) {
+    throw new Error("Некорректные данные нейросети.");
+  }
+
+  return new NeuralNetwork(
+    data.layerSizes,
+    data.weights.map((layer) => layer.map((row) => [...row])),
+    data.biases.map((layer) => [...layer]),
+  );
+}
+
+function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = "") {
+  ui.loadBtn.disabled = !savedData;
+  ui.saveStatus.classList.remove("ready", "error");
+
+  if (savedData) {
+    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation}, лучший фитнес ${Number(savedData.bestFitness || 0).toFixed(2)}`;
+    ui.saveStatus.classList.add("ready");
+    return;
+  }
+
+  if (errorMessage) {
+    ui.saveStatus.textContent = errorMessage;
+    ui.saveStatus.classList.add("error");
+    return;
+  }
+
+  ui.saveStatus.textContent = "Сохранение не найдено.";
+}
+
+function savePopulation(trainer = state.trainer) {
+  if (!trainer?.population?.length) {
+    return false;
+  }
+
+  const payload = {
+    version: 1,
+    savedAt: Date.now(),
+    generation: trainer.generation,
+    bestFitness: trainer.bestFitness,
+    nextIndividualId,
+    config: trainer.config ? { ...trainer.config, populationSize: trainer.population.length } : null,
+    population: trainer.population.map((individual) => ({
+      id: individual.id,
+      fitness: individual.fitness,
+      network: serializeNetwork(individual.network),
+    })),
+    bestEver: trainer.bestEver
+      ? {
+          id: trainer.bestEver.id,
+          fitness: trainer.bestEver.fitness,
+          network: serializeNetwork(trainer.bestEver.network),
+        }
+      : null,
+  };
+
+  try {
+    localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
+    state.savedPopulationData = payload;
+    updateSaveStatus(payload);
+    return true;
+  } catch (error) {
+    console.error("Не удалось сохранить популяцию:", error);
+    updateSaveStatus(state.savedPopulationData, "Не удалось сохранить популяцию в браузере.");
+    return false;
+  }
+}
+
+function loadPopulation() {
+  const raw = localStorage.getItem(POPULATION_STORAGE_KEY);
+  if (!raw) {
+    state.savedPopulationData = null;
+    updateSaveStatus(null);
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(raw);
+    if (!payload || !Array.isArray(payload.population) || payload.population.length === 0) {
+      throw new Error("Пустое сохранение.");
+    }
+
+    state.savedPopulationData = payload;
+    if (payload.config) {
+      setControlsFromConfig(payload.config);
+    }
+    updateSaveStatus(payload);
+    return payload;
+  } catch (error) {
+    console.error("Не удалось загрузить сохранение:", error);
+    localStorage.removeItem(POPULATION_STORAGE_KEY);
+    state.savedPopulationData = null;
+    updateSaveStatus(null, "Сохранение повреждено и было сброшено.");
+    return null;
+  }
 }
 
 class NeuralNetwork {
@@ -556,17 +676,56 @@ class EvolutionTrainer {
     this.config = null;
   }
 
-  start(config) {
-    this.config = config;
-    this.population = this.createPopulation(config);
+  start(config, savedData = null) {
+    this.config = { ...config };
+    this.bestEver = null;
+    this.currentMatch = null;
+
+    if (savedData?.population?.length) {
+      this.restorePopulation(savedData, config);
+      this.running = true;
+      this.prepareGeneration();
+      this.onLog(
+        `Загружено сохранение: поколение ${this.generation}, лучший фитнес ${this.bestFitness.toFixed(2)}.`,
+      );
+      return;
+    }
+
+    this.population = this.createPopulation(this.config);
     this.generation = 1;
     this.bestFitness = 0;
-    this.bestEver = null;
     this.running = true;
     this.prepareGeneration();
     this.onLog(
-      `Старт обучения: популяция ${config.populationSize}, игроков ${config.teamSize}, матч ${config.matchMinutes} мин.`,
+      `Старт нового обучения: популяция ${this.config.populationSize}, игроков ${this.config.teamSize}, матч ${this.config.matchMinutes} мин.`,
     );
+  }
+
+  restorePopulation(savedData, fallbackConfig) {
+    const mergedConfig = {
+      ...fallbackConfig,
+      ...(savedData.config || {}),
+      populationSize: savedData.population.length,
+    };
+
+    this.config = mergedConfig;
+    this.population = savedData.population.map((individual) => ({
+      id: Number(individual.id) || (nextIndividualId += 1),
+      network: deserializeNetwork(individual.network),
+      fitness: Number(individual.fitness) || 0,
+    }));
+
+    const maxLoadedId = this.population.reduce((max, individual) => Math.max(max, individual.id), 0);
+    nextIndividualId = Math.max(nextIndividualId, Number(savedData.nextIndividualId) || 0, maxLoadedId);
+    this.generation = Math.max(1, Math.floor(Number(savedData.generation) || 1));
+    this.bestFitness = Number(savedData.bestFitness) || 0;
+    this.bestEver = savedData.bestEver?.network
+      ? {
+          id: Number(savedData.bestEver.id) || 0,
+          fitness: Number(savedData.bestEver.fitness) || this.bestFitness,
+          network: deserializeNetwork(savedData.bestEver.network),
+        }
+      : null;
   }
 
   createPopulation(config) {
@@ -735,6 +894,7 @@ class EvolutionTrainer {
     this.population = nextGeneration;
     this.generation += 1;
     this.bestFitness = Math.max(this.bestFitness, leader.fitness);
+    savePopulation(this);
     this.prepareGeneration();
   }
 
@@ -1115,10 +1275,28 @@ function tick(timestamp) {
 
 ui.startBtn.addEventListener("click", () => {
   const trainer = new EvolutionTrainer(addLog);
-  trainer.start(readConfig());
   state.trainer = trainer;
+  trainer.start(readConfig());
   state.lastFrameTime = performance.now();
-  addLog("Обучение запущено.");
+  addLog("Новое обучение запущено со случайной популяцией.");
+});
+
+ui.loadBtn.addEventListener("click", () => {
+  const savedData = loadPopulation();
+  if (!savedData) {
+    addLog("Сохранение не найдено.");
+    return;
+  }
+
+  if (savedData.config) {
+    setControlsFromConfig(savedData.config);
+  }
+
+  const trainer = new EvolutionTrainer(addLog);
+  state.trainer = trainer;
+  trainer.start(readConfig(), savedData);
+  state.lastFrameTime = performance.now();
+  addLog("Продолжено обучение из последнего сохранения.");
 });
 
 ui.slowBtn.addEventListener("click", () => {
@@ -1179,6 +1357,7 @@ ui.skipBtn.addEventListener("click", () => {
   state.lastFrameTime = performance.now();
 });
 
+loadPopulation();
 applyPitchWidth();
 updateStats();
 ui.log.textContent = logs.join("\n");
