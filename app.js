@@ -66,6 +66,7 @@ const ui = {
   hideBtn: document.getElementById("hideBtn"),
   pauseBtn: document.getElementById("pauseBtn"),
   skipBtn: document.getElementById("skipBtn"),
+  showTimeToggle: document.getElementById("showTimeToggle"),
   fitnessPanels: document.getElementById("fitnessPanels"),
   fitnessHeaderA: document.getElementById("fitnessHeaderA"),
   fitnessHeaderB: document.getElementById("fitnessHeaderB"),
@@ -92,6 +93,7 @@ const state = {
   savedPopulationData: null,
   sidebarCollapsed: true,
   isPaused: false,
+  showTimeIndicator: true,
 };
 
 let nextIndividualId = 1;
@@ -1495,38 +1497,40 @@ function drawMatch(match) {
   ctx.font = "bold 20px Inter, sans-serif";
   ctx.fillText(scoreText, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 0.5);
 
-  const timeBoxX = scoreBoxX + scoreBoxWidth + overlayGap;
-  const timeBoxY = overlayY;
-  const timeBarX = timeBoxX + 4;
-  const timeBarY = timeBoxY + 8;
-  const timeBarWidth = Math.max(18, timeBoxWidth - 8);
-  const timeBarHeight = timeBoxHeight - 16;
-  const fillWidth = timeBarWidth * progress;
+  if (state.showTimeIndicator) {
+    const timeBoxX = scoreBoxX + scoreBoxWidth + overlayGap;
+    const timeBoxY = overlayY;
+    const timeBarX = timeBoxX + 4;
+    const timeBarY = timeBoxY + 8;
+    const timeBarWidth = Math.max(18, timeBoxWidth - 8);
+    const timeBarHeight = timeBoxHeight - 16;
+    const fillWidth = timeBarWidth * progress;
 
-  ctx.fillStyle = "rgba(0,0,0,0.42)";
-  ctx.fillRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.fillRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
-  ctx.fillStyle = "rgba(255,255,255,0.18)";
-  ctx.fillRect(timeBarX, timeBarY, fillWidth, timeBarHeight);
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fillRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(timeBarX, timeBarY, fillWidth, timeBarHeight);
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(timeBarX, timeBarY, fillWidth, timeBarHeight);
-  ctx.clip();
-  ctx.strokeStyle = "rgba(255,255,255,0.26)";
-  ctx.lineWidth = 4;
-  for (let stripeX = timeBarX - timeBarHeight; stripeX < timeBarX + fillWidth + timeBarHeight; stripeX += 12) {
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(stripeX, timeBarY + timeBarHeight);
-    ctx.lineTo(stripeX + timeBarHeight, timeBarY);
-    ctx.stroke();
-  }
-  ctx.restore();
+    ctx.rect(timeBarX, timeBarY, fillWidth, timeBarHeight);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(255,255,255,0.26)";
+    ctx.lineWidth = 4;
+    for (let stripeX = timeBarX - timeBarHeight; stripeX < timeBarX + fillWidth + timeBarHeight; stripeX += 12) {
+      ctx.beginPath();
+      ctx.moveTo(stripeX, timeBarY + timeBarHeight);
+      ctx.lineTo(stripeX + timeBarHeight, timeBarY);
+      ctx.stroke();
+    }
+    ctx.restore();
 
-  ctx.strokeStyle = "rgba(255,255,255,0.16)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
+  }
   ctx.textAlign = "start";
   ctx.textBaseline = "alphabetic";
 }
@@ -1633,6 +1637,11 @@ ui.pauseBtn.addEventListener("click", () => {
   state.lastFrameTime = performance.now();
   updatePlaybackControls();
   addLog(state.isPaused ? "Обучение поставлено на паузу." : "Обучение возобновлено.");
+});
+
+ui.showTimeToggle.addEventListener("change", () => {
+  state.showTimeIndicator = ui.showTimeToggle.checked;
+  addLog(state.showTimeIndicator ? "Индикатор времени матча включён." : "Индикатор времени матча скрыт.");
 });
 
 ui.sidebarToggle.addEventListener("click", () => {
