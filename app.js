@@ -67,6 +67,8 @@ const ui = {
   pauseBtn: document.getElementById("pauseBtn"),
   skipBtn: document.getElementById("skipBtn"),
   fitnessPanels: document.getElementById("fitnessPanels"),
+  fitnessHeaderA: document.getElementById("fitnessHeaderA"),
+  fitnessHeaderB: document.getElementById("fitnessHeaderB"),
   fitnessTableCombined: document.getElementById("fitnessTableCombined"),
   generation: document.getElementById("generation"),
   matchInfo: document.getElementById("matchInfo"),
@@ -218,6 +220,9 @@ function updateMatchFitnessTables(match) {
   const breakdownB = match?.fitnessBreakdown?.B || createEmptyFitnessBreakdown();
   const totalA = match?.teamFitness?.A || 0;
   const totalB = match?.teamFitness?.B || 0;
+
+  ui.fitnessHeaderA.textContent = match?.individualA ? `#${match.individualA.id}` : "A";
+  ui.fitnessHeaderB.textContent = match?.individualB ? `#${match.individualB.id}` : "B";
 
   ui.fitnessTableCombined.innerHTML = FITNESS_BREAKDOWN_ROWS.map(({ key, label, total: isTotal }) => {
     const valueA = isTotal ? totalA : (breakdownA[key] || 0);
@@ -1641,7 +1646,19 @@ ui.skipBtn.addEventListener("click", () => {
   state.lastFrameTime = performance.now();
 });
 
-loadPopulation();
+const initialSavedData = loadPopulation();
+if (initialSavedData) {
+  if (initialSavedData.config) {
+    setControlsFromConfig(initialSavedData.config);
+  }
+
+  const trainer = new EvolutionTrainer(addLog);
+  state.trainer = trainer;
+  state.isPaused = false;
+  trainer.start(readConfig(), initialSavedData);
+  addLog("Последнее сохранение загружено автоматически.");
+}
+
 applySidebarState();
 applyPitchWidth();
 updateStats();
