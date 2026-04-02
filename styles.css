@@ -224,13 +224,21 @@ button.secondary-action {
 
 .pitch-wrap {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: center;
-  gap: 14px;
+  gap: 18px;
   min-height: 100vh;
   padding: 16px 16px 16px 68px;
   overflow: auto;
+}
+
+.pitch-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
 }
 
 .pitch-stage {
@@ -264,15 +272,18 @@ button.secondary-action {
 }
 
 .fitness-panels {
-  width: 550px;
+  width: 280px;
+  min-width: 280px;
+  max-width: 280px;
   display: block;
-  align-self: center;
+  align-self: flex-start;
+  flex: 0 0 280px;
 }
 
 .fitness-card {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 12px;
-  padding: 12px;
+  padding: 10px;
 }
 
 .fitness-card-combined {
@@ -280,19 +291,20 @@ button.secondary-action {
 }
 
 .fitness-card h2 {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
+  margin: 0 0 8px;
+  font-size: 0.9rem;
 }
 
 .fitness-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  table-layout: fixed;
+  font-size: 0.8rem;
 }
 
 .fitness-table th,
 .fitness-table td {
-  padding: 6px 4px;
+  padding: 5px 3px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -306,6 +318,18 @@ button.secondary-action {
   text-align: right;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.fitness-table-combined th:first-child,
+.fitness-table-combined td:first-child {
+  width: 56%;
+}
+
+.fitness-table-combined th:nth-child(2),
+.fitness-table-combined td:nth-child(2),
+.fitness-table-combined th:nth-child(3),
+.fitness-table-combined td:nth-child(3) {
+  width: 22%;
 }
 
 .fitness-table-combined th:nth-child(2),
@@ -347,11 +371,15 @@ canvas {
   }
 
   .pitch-wrap {
+    flex-direction: column;
+    align-items: center;
     padding-left: 68px;
   }
 
   .fitness-panels {
-    grid-template-columns: 1fr;
-    width: min(100%, 550px) !important;
+    width: min(100%, 320px) !important;
+    min-width: 0;
+    max-width: 320px;
+    flex-basis: auto;
   }
 }

@@ -1314,7 +1314,6 @@ function applySidebarState() {
 function applyPitchWidth() {
   state.pitchWidth = Math.round(Math.min(1800, Math.max(1, state.pitchWidth)));
   ui.pitchStage.style.width = `${state.pitchWidth}px`;
-  ui.fitnessPanels.style.width = `${state.pitchWidth}px`;
 }
 
 function getPitchResizeMode(clientX, clientY) {

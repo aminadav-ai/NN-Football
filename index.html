@@ -120,10 +120,12 @@
       </aside>
 
       <main class="pitch-wrap">
-        <div class="pitch-stage" id="pitchStage">
-          <canvas id="pitch" width="1100" height="680" aria-label="Футбольное поле"></canvas>
+        <div class="pitch-column">
+          <div class="pitch-stage" id="pitchStage">
+            <canvas id="pitch" width="1100" height="680" aria-label="Футбольное поле"></canvas>
+          </div>
+          <button id="skipBtn" class="skip-btn">Пропустить матч</button>
         </div>
-        <button id="skipBtn" class="skip-btn">Пропустить матч</button>
 
         <section class="fitness-panels" id="fitnessPanels" aria-label="Расшифровка фитнеса по командам">
           <article class="fitness-card fitness-card-combined">
@@ -132,8 +134,8 @@
               <thead>
                 <tr>
                   <th>Составляющая</th>
-                  <th>Команда A</th>
-                  <th>Команда B</th>
+                  <th>A</th>
+                  <th>B</th>
                 </tr>
               </thead>
               <tbody id="fitnessTableCombined"></tbody>
