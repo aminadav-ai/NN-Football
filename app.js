@@ -416,8 +416,8 @@ class FootballMatch {
         const impact = resolveElasticCollision(a, b, 0.88);
 
         if (impact > 1.5) {
-          this.teamFitness[a.team] -= 0.15;
-          this.teamFitness[b.team] -= 0.15;
+          this.teamFitness[a.team] -= 1.5;
+          this.teamFitness[b.team] -= 1.5;
         }
       }
     }
