@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flower-3 — Эволюционный футбол</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="panel controls">
+        <h1>Flower-3</h1>
+        <p class="subtitle">Эволюционное обучение нейросети игре в футбол</p>
+
+        <div class="control-grid">
+          <label>
+            Игроков в команде
+            <input id="teamSize" type="number" min="1" max="8" value="4" />
+          </label>
+
+          <label>
+            Слоёв центральных нейронов
+            <input id="hiddenLayers" type="number" min="1" max="4" value="2" />
+          </label>
+
+          <label>
+            Нейронов в слое
+            <input id="neuronsPerLayer" type="number" min="4" max="64" value="16" />
+          </label>
+
+          <label>
+            Размер популяции
+            <input id="populationSize" type="number" min="4" max="40" value="12" />
+          </label>
+
+          <label>
+            Время матча (мин)
+            <input id="matchMinutes" type="number" min="1" max="10" step="1" value="1" />
+          </label>
+        </div>
+
+        <div class="buttons">
+          <button id="startBtn" class="primary">Запустить обучение</button>
+          <button id="slowBtn">Медленный режим</button>
+          <button id="fastBtn">Быстрый режим</button>
+          <button id="showBtn">Показывать игры</button>
+          <button id="hideBtn">Скрывать игры</button>
+        </div>
+
+        <section class="stats">
+          <h2>Состояние</h2>
+          <div class="stats-list">
+            <div><span>Поколение:</span> <strong id="generation">0</strong></div>
+            <div><span>Матч:</span> <strong id="matchInfo">—</strong></div>
+            <div><span>Лучший фитнес:</span> <strong id="bestFitness">0.00</strong></div>
+            <div><span>Режим:</span> <strong id="modeInfo">Медленный</strong></div>
+            <div><span>Отрисовка:</span> <strong id="renderInfo">Вкл.</strong></div>
+          </div>
+        </section>
+
+        <section class="legend">
+          <h2>Фитнес</h2>
+          <ul>
+            <li>Касание мяча: +1.5</li>
+            <li>Гол сопернику: +35</li>
+            <li>Автогол: −25</li>
+            <li>Толчок игрока: −0.15</li>
+            <li>Владение мячом: +0.02 за шаг</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Журнал</h2>
+          <pre id="log"></pre>
+        </section>
+      </aside>
+
+      <main class="pitch-wrap">
+        <canvas id="pitch" width="1100" height="680" aria-label="Футбольное поле"></canvas>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

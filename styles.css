@@ -1,0 +1,162 @@
+:root {
+  color-scheme: dark;
+  --bg: #08131b;
+  --panel: #12202c;
+  --panel-2: #182b3a;
+  --text: #e9f3fb;
+  --muted: #9ab1c3;
+  --accent: #62d2a2;
+  --accent-2: #61a8ff;
+  --danger: #ff7c7c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #102232, var(--bg));
+  color: var(--text);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  min-height: 100vh;
+}
+
+.panel {
+  padding: 20px;
+  background: rgba(10, 19, 27, 0.9);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 18px 0 10px;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0 0 18px;
+}
+
+.control-grid {
+  display: grid;
+  gap: 10px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+input {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #284155;
+  color: var(--text);
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+button.primary {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, var(--accent), #2ca1b5);
+  color: #041018;
+}
+
+.stats,
+.legend {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 16px;
+}
+
+.stats-list {
+  display: grid;
+  gap: 8px;
+}
+
+.stats-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stats-list span,
+.legend li {
+  color: var(--muted);
+}
+
+.legend ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#log {
+  min-height: 180px;
+  max-height: 260px;
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 12px;
+  color: #bfd4e3;
+  white-space: pre-wrap;
+}
+
+.pitch-wrap {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+canvas {
+  width: min(100%, 1100px);
+  height: auto;
+  background: #1b7f38;
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
