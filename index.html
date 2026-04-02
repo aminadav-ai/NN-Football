@@ -48,6 +48,11 @@
             Время матча (мин)
             <input id="matchMinutes" type="number" min="1" max="10" step="1" value="1" />
           </label>
+
+          <label>
+            Множитель скорости
+            <input id="speedMultiplier" type="number" min="0.25" max="100" step="0.25" value="1" />
+          </label>
         </div>
 
         <div class="buttons">
@@ -55,6 +60,8 @@
           <button id="loadBtn" class="secondary-action" disabled>Загрузить последнее</button>
           <button id="slowBtn">Медленный режим</button>
           <button id="fastBtn">Быстрый режим</button>
+          <button id="ultraBtn" class="ultra-btn">Ультра-быстрый</button>
+          <button id="maxBtn" class="max-btn">Без ограничений / Max</button>
           <button id="showBtn">Показывать игры</button>
           <button id="hideBtn">Скрывать игры</button>
         </div>

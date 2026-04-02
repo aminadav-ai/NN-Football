@@ -14,6 +14,7 @@ const MAX_SIGHT = 130;
 const MAX_PLAYER_SPEED = 12;
 const STEP_DT = 0.08;
 const FAST_STEPS = 24;
+const ULTRA_STEPS = 120;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const FITNESS_SETTINGS_DEFAULTS = {
   ballTouchReward: 1.5,
@@ -42,6 +43,7 @@ const runtime = {
   showGames: true,
   showTimeIndicator: true,
   showFieldStripes: true,
+  useMaxSpeed: false,
   accumulator: 0,
   previousRenderMatch: null,
   currentRenderMatch: null,
@@ -425,7 +427,7 @@ function drawMatch(match) {
   }
 
   const ballSpeed = Math.hypot(match.ball?.vx || 0, match.ball?.vy || 0);
-  if (runtime.stepsPerFrame === FAST_STEPS && ballSpeed >= BALL_TRAIL_SPEED_THRESHOLD && match.ballTrail?.length > 1) {
+  if ((runtime.useMaxSpeed || runtime.stepsPerFrame >= FAST_STEPS) && ballSpeed >= BALL_TRAIL_SPEED_THRESHOLD && match.ballTrail?.length > 1) {
     for (let i = 1; i < match.ballTrail.length; i += 1) {
       const prev = match.ballTrail[i - 1];
       const curr = match.ballTrail[i];
@@ -521,15 +523,30 @@ function renderFrame(now) {
   }
 
   if (runtime.trainer?.running && !runtime.isPaused) {
-    runtime.accumulator += elapsedSeconds * runtime.stepsPerFrame;
-    let safety = 0;
+    if (runtime.useMaxSpeed) {
+      const frameBudgetMs = 12;
+      const startedAt = performance.now();
+      let safety = 0;
 
-    while (runtime.accumulator >= STEP_DT && runtime.trainer?.running && safety < 5000) {
-      runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
-      runtime.trainer.step(STEP_DT);
-      runtime.currentRenderMatch = captureCurrentMatchState();
-      runtime.accumulator -= STEP_DT;
-      safety += 1;
+      while (runtime.trainer?.running && safety < 50000 && performance.now() - startedAt < frameBudgetMs) {
+        runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
+        runtime.trainer.step(STEP_DT);
+        runtime.currentRenderMatch = captureCurrentMatchState();
+        safety += 1;
+      }
+
+      runtime.accumulator = 0;
+    } else {
+      runtime.accumulator += elapsedSeconds * runtime.stepsPerFrame;
+      let safety = 0;
+
+      while (runtime.accumulator >= STEP_DT && runtime.trainer?.running && safety < 5000) {
+        runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
+        runtime.trainer.step(STEP_DT);
+        runtime.currentRenderMatch = captureCurrentMatchState();
+        runtime.accumulator -= STEP_DT;
+        safety += 1;
+      }
     }
 
     emitSaveData(false);
@@ -1451,6 +1468,7 @@ self.onmessage = (event) => {
       }
       case "setStepsPerFrame": {
         runtime.stepsPerFrame = Math.max(1, Number(payload.stepsPerFrame) || FAST_STEPS);
+        runtime.useMaxSpeed = Boolean(payload.useMaxSpeed);
         runtime.lastTickAt = performance.now();
         emitStatus(true);
         break;
@@ -1501,6 +1519,9 @@ self.onmessage = (event) => {
           }
           if (Object.hasOwn(payload, "showFieldStripes")) {
             runtime.showFieldStripes = payload.showFieldStripes !== false;
+          }
+          if (Object.hasOwn(payload, "useMaxSpeed")) {
+            runtime.useMaxSpeed = Boolean(payload.useMaxSpeed);
           }
           if (runtime.trainer?.config) {
             Object.assign(runtime.trainer.config, payload);

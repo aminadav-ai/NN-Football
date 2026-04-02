@@ -14,6 +14,7 @@ const MAX_SIGHT = 130;
 const MAX_PLAYER_SPEED = 12;
 const STEP_DT = 0.08;
 const FAST_STEPS = 24;
+const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const FITNESS_SETTINGS_DEFAULTS = {
@@ -52,6 +53,7 @@ const ui = {
   neuronsPerLayer: document.getElementById("neuronsPerLayer"),
   populationSize: document.getElementById("populationSize"),
   matchMinutes: document.getElementById("matchMinutes"),
+  speedMultiplier: document.getElementById("speedMultiplier"),
   fitnessBallTouch: document.getElementById("fitnessBallTouch"),
   fitnessGoal: document.getElementById("fitnessGoal"),
   fitnessConceded: document.getElementById("fitnessConceded"),
@@ -62,6 +64,8 @@ const ui = {
   loadBtn: document.getElementById("loadBtn"),
   slowBtn: document.getElementById("slowBtn"),
   fastBtn: document.getElementById("fastBtn"),
+  ultraBtn: document.getElementById("ultraBtn"),
+  maxBtn: document.getElementById("maxBtn"),
   showBtn: document.getElementById("showBtn"),
   hideBtn: document.getElementById("hideBtn"),
   pauseBtn: document.getElementById("pauseBtn"),
@@ -87,6 +91,9 @@ let ctx = supportsOffscreenCanvas ? null : ui.canvas.getContext("2d");
 const state = {
   showGames: true,
   stepsPerFrame: FAST_STEPS,
+  speedPreset: "fast",
+  speedMultiplier: 1,
+  useMaxSpeed: false,
   mode: "Быстрый",
   trainer: null,
   worker: null,
@@ -180,12 +187,18 @@ function handleWorkerMessage(event) {
   const { type, payload, message } = event.data || {};
 
   if (type === "ready") {
-    postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
+    postToWorker("setStepsPerFrame", {
+      stepsPerFrame: state.stepsPerFrame,
+      useMaxSpeed: state.useMaxSpeed,
+    });
     postToWorker("setPaused", { isPaused: state.isPaused });
     postToWorker("updateConfig", {
       showGames: state.showGames,
       showTimeIndicator: state.showTimeIndicator,
       showFieldStripes: state.showFieldStripes,
+      speedPreset: state.speedPreset,
+      speedMultiplier: state.speedMultiplier,
+      useMaxSpeed: state.useMaxSpeed,
     });
     return;
   }
@@ -345,6 +358,55 @@ function readNumberInput(element, fallback) {
   return toFiniteNumber(element.value, fallback);
 }
 
+function normalizeSpeedMultiplier(value) {
+  return clamp(toFiniteNumber(value, 1), 0.25, 100);
+}
+
+function getBaseStepsForPreset(preset) {
+  if (preset === "slow") return SLOW_STEPS;
+  if (preset === "ultra") return ULTRA_STEPS;
+  return FAST_STEPS;
+}
+
+function formatMultiplier(multiplier) {
+  const value = normalizeSpeedMultiplier(multiplier);
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+}
+
+function applySpeedState(options = {}) {
+  const preset = options.preset ?? state.speedPreset ?? "fast";
+  const multiplier = normalizeSpeedMultiplier(options.multiplier ?? state.speedMultiplier ?? 1);
+  const useMaxSpeed = Boolean(options.useMaxSpeed ?? state.useMaxSpeed);
+  const shouldNotifyWorker = options.notifyWorker ?? Boolean(state.worker);
+  const shouldPersist = options.persist ?? false;
+
+  state.speedPreset = useMaxSpeed ? "max" : preset;
+  state.speedMultiplier = multiplier;
+  state.useMaxSpeed = useMaxSpeed;
+  state.stepsPerFrame = Math.max(1, Math.round(getBaseStepsForPreset(preset) * multiplier));
+  state.mode = useMaxSpeed
+    ? `Max ×${formatMultiplier(multiplier)}`
+    : `${preset === "slow" ? "Медленный" : preset === "ultra" ? "Ультра-быстрый" : "Быстрый"}${multiplier !== 1 ? ` ×${formatMultiplier(multiplier)}` : ""}`;
+
+  ui.speedMultiplier.value = formatMultiplier(multiplier);
+
+  if (shouldNotifyWorker) {
+    postToWorker("setStepsPerFrame", {
+      stepsPerFrame: state.stepsPerFrame,
+      useMaxSpeed: state.useMaxSpeed,
+    });
+    postToWorker("updateConfig", {
+      speedPreset: state.speedPreset,
+      speedMultiplier: state.speedMultiplier,
+      useMaxSpeed: state.useMaxSpeed,
+    });
+  }
+
+  if (shouldPersist) {
+    savePopulation();
+  }
+}
+
 function normalizeFitnessSettings(settings = {}) {
   return {
     ballTouchReward: toFiniteNumber(settings.ballTouchReward, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
@@ -427,6 +489,13 @@ function setControlsFromConfig(config) {
   state.showTimeIndicator = ui.showTimeToggle.checked;
   ui.showFieldStripesToggle.checked = config.showFieldStripes !== false;
   state.showFieldStripes = ui.showFieldStripesToggle.checked;
+  applySpeedState({
+    preset: config.speedPreset || (config.useMaxSpeed ? "max" : "fast"),
+    multiplier: config.speedMultiplier ?? 1,
+    useMaxSpeed: config.useMaxSpeed === true,
+    notifyWorker: Boolean(state.worker),
+    persist: false,
+  });
 
   const fitnessSettings = normalizeFitnessSettings(config.fitnessSettings);
   ui.fitnessBallTouch.value = String(fitnessSettings.ballTouchReward);
@@ -1589,6 +1658,9 @@ function readConfig() {
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 64),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
+    speedPreset: state.speedPreset,
+    speedMultiplier: state.speedMultiplier,
+    useMaxSpeed: state.useMaxSpeed,
     showTimeIndicator: ui.showTimeToggle.checked,
     showFieldStripes: ui.showFieldStripesToggle.checked,
     fitnessSettings: readFitnessSettings(),
@@ -1835,17 +1907,28 @@ ui.loadBtn.addEventListener("click", () => {
 });
 
 ui.slowBtn.addEventListener("click", () => {
-  state.stepsPerFrame = SLOW_STEPS;
-  state.mode = "Медленный";
-  postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
-  addLog("Включён медленный режим реального времени.");
+  applySpeedState({ preset: "slow", useMaxSpeed: false, persist: true });
+  addLog(`Включён ${state.mode.toLowerCase()} режим.`);
 });
 
 ui.fastBtn.addEventListener("click", () => {
-  state.stepsPerFrame = FAST_STEPS;
-  state.mode = "Быстрый";
-  postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame });
-  addLog("Включён быстрый режим.");
+  applySpeedState({ preset: "fast", useMaxSpeed: false, persist: true });
+  addLog(`Включён ${state.mode.toLowerCase()} режим.`);
+});
+
+ui.ultraBtn.addEventListener("click", () => {
+  applySpeedState({ preset: "ultra", useMaxSpeed: false, persist: true });
+  addLog(`Включён ${state.mode.toLowerCase()} режим.`);
+});
+
+ui.maxBtn.addEventListener("click", () => {
+  applySpeedState({ preset: state.speedPreset === "max" ? "ultra" : state.speedPreset, useMaxSpeed: true, persist: true });
+  addLog("Включён режим без ограничений / max.");
+});
+
+ui.speedMultiplier.addEventListener("change", () => {
+  applySpeedState({ multiplier: ui.speedMultiplier.value, useMaxSpeed: state.useMaxSpeed, persist: true });
+  addLog(`Множитель скорости установлен: ×${formatMultiplier(state.speedMultiplier)}.`);
 });
 
 ui.showBtn.addEventListener("click", () => {
@@ -1945,6 +2028,7 @@ ui.skipBtn.addEventListener("click", () => {
 });
 
 ensureWorker();
+applySpeedState({ notifyWorker: false, persist: false });
 const initialSavedData = loadPopulation();
 if (initialSavedData) {
   if (initialSavedData.config) {
