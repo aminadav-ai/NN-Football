@@ -23,22 +23,17 @@ const FITNESS_SETTINGS_DEFAULTS = {
   ownGoalPenalty: -25,
   playerContactPenalty: -0.01,
   hardCollisionPenalty: -1.5,
-  possessionReward: 0.02,
-  proximityReward: 0,
-  scoreDiffReward: 4,
 };
 const HARD_COLLISION_THRESHOLD = 1.5;
 const MAX_LOG_ENTRIES = 500;
 const POPULATION_STORAGE_KEY = "flower-3.population.v1";
-const FITNESS_BREAKDOWN_ROWS = [  { key: "ballTouch", label: "Касание мяча" },
+const FITNESS_BREAKDOWN_ROWS = [
+  { key: "ballTouch", label: "Касание мяча" },
   { key: "goals", label: "Гол сопернику" },
   { key: "conceded", label: "Пропущенный гол" },
   { key: "ownGoal", label: "Автогол" },
   { key: "playerContact", label: "Касание игрока" },
   { key: "hardCollision", label: "Сильный толчок" },
-  { key: "possession", label: "Владение мячом" },
-  { key: "proximity", label: "Ближайший к мячу" },
-  { key: "scoreDiff", label: "Разница счёта" },
   { key: "total", label: "Итого", total: true },
 ];
 
@@ -63,9 +58,6 @@ const ui = {
   fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
   fitnessPlayerContact: document.getElementById("fitnessPlayerContact"),
   fitnessHardCollision: document.getElementById("fitnessHardCollision"),
-  fitnessPossession: document.getElementById("fitnessPossession"),
-  fitnessProximity: document.getElementById("fitnessProximity"),
-  fitnessScoreDiff: document.getElementById("fitnessScoreDiff"),
   startBtn: document.getElementById("startBtn"),
   loadBtn: document.getElementById("loadBtn"),
   slowBtn: document.getElementById("slowBtn"),
@@ -157,23 +149,35 @@ function addLog(message) {
   ui.log.textContent = logs.join("\n");
 }
 
+function toFiniteNumber(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
 function readNumberInput(element, fallback) {
-  const value = Number(element.value);
-  return Number.isFinite(value) ? value : fallback;
+  return toFiniteNumber(element.value, fallback);
+}
+
+function normalizeFitnessSettings(settings = {}) {
+  return {
+    ballTouchReward: toFiniteNumber(settings.ballTouchReward, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
+    goalReward: toFiniteNumber(settings.goalReward, FITNESS_SETTINGS_DEFAULTS.goalReward),
+    concededPenalty: toFiniteNumber(settings.concededPenalty, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
+    ownGoalPenalty: toFiniteNumber(settings.ownGoalPenalty, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
+    playerContactPenalty: toFiniteNumber(settings.playerContactPenalty, FITNESS_SETTINGS_DEFAULTS.playerContactPenalty),
+    hardCollisionPenalty: toFiniteNumber(settings.hardCollisionPenalty, FITNESS_SETTINGS_DEFAULTS.hardCollisionPenalty),
+  };
 }
 
 function readFitnessSettings() {
-  return {
+  return normalizeFitnessSettings({
     ballTouchReward: readNumberInput(ui.fitnessBallTouch, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
     goalReward: readNumberInput(ui.fitnessGoal, FITNESS_SETTINGS_DEFAULTS.goalReward),
     concededPenalty: readNumberInput(ui.fitnessConceded, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
     ownGoalPenalty: readNumberInput(ui.fitnessOwnGoal, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
     playerContactPenalty: readNumberInput(ui.fitnessPlayerContact, FITNESS_SETTINGS_DEFAULTS.playerContactPenalty),
     hardCollisionPenalty: readNumberInput(ui.fitnessHardCollision, FITNESS_SETTINGS_DEFAULTS.hardCollisionPenalty),
-    possessionReward: readNumberInput(ui.fitnessPossession, FITNESS_SETTINGS_DEFAULTS.possessionReward),
-    proximityReward: readNumberInput(ui.fitnessProximity, FITNESS_SETTINGS_DEFAULTS.proximityReward),
-    scoreDiffReward: readNumberInput(ui.fitnessScoreDiff, FITNESS_SETTINGS_DEFAULTS.scoreDiffReward),
-  };
+  });
 }
 
 function applyLiveFitnessSettings() {
@@ -198,9 +202,6 @@ function createEmptyFitnessBreakdown() {
     ownGoal: 0,
     playerContact: 0,
     hardCollision: 0,
-    possession: 0,
-    proximity: 0,
-    scoreDiff: 0,
   };
 }
 
@@ -233,16 +234,13 @@ function setControlsFromConfig(config) {
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
 
-  const fitnessSettings = { ...FITNESS_SETTINGS_DEFAULTS, ...(config.fitnessSettings || {}) };
+  const fitnessSettings = normalizeFitnessSettings(config.fitnessSettings);
   ui.fitnessBallTouch.value = String(fitnessSettings.ballTouchReward);
   ui.fitnessGoal.value = String(fitnessSettings.goalReward);
   ui.fitnessConceded.value = String(fitnessSettings.concededPenalty);
   ui.fitnessOwnGoal.value = String(fitnessSettings.ownGoalPenalty);
   ui.fitnessPlayerContact.value = String(fitnessSettings.playerContactPenalty);
   ui.fitnessHardCollision.value = String(fitnessSettings.hardCollisionPenalty);
-  ui.fitnessPossession.value = String(fitnessSettings.possessionReward);
-  ui.fitnessProximity.value = String(fitnessSettings.proximityReward);
-  ui.fitnessScoreDiff.value = String(fitnessSettings.scoreDiffReward);
 }
 
 function serializeNetwork(network) {
@@ -331,10 +329,7 @@ function savePopulation(trainer = state.trainer) {
       ? {
           ...trainer.config,
           populationSize: trainer.population.length,
-          fitnessSettings: {
-            ...FITNESS_SETTINGS_DEFAULTS,
-            ...(trainer.config.fitnessSettings || {}),
-          },
+          fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
         }
       : null,
     population: trainer.population.map((individual) => ({
@@ -619,8 +614,6 @@ class FootballMatch {
 
     this.handlePlayerCollisions();
     this.updateBall(dt);
-    this.rewardBallProximity();
-    this.rewardBallPossession();
 
     if (this.time >= this.duration) {
       this.finish();
@@ -630,42 +623,6 @@ class FootballMatch {
   finish() {
     if (this.done) return;
     this.done = true;
-    const diff = this.score.A - this.score.B;
-    const scoreDiffReward = this.getFitnessSetting("scoreDiffReward");
-    this.addFitness("A", "scoreDiff", diff * scoreDiffReward);
-    this.addFitness("B", "scoreDiff", -diff * scoreDiffReward);
-  }
-
-  rewardBallProximity() {
-    let closestA = Infinity;
-    let closestB = Infinity;
-
-    for (const player of this.players) {
-      const distance = Math.hypot(player.x - this.ball.x, player.y - this.ball.y);
-      if (player.team === "A") {
-        closestA = Math.min(closestA, distance);
-      } else {
-        closestB = Math.min(closestB, distance);
-      }
-    }
-
-    if (Math.abs(closestA - closestB) < 0.001) {
-      return;
-    }
-
-    const proximityReward = this.getFitnessSetting("proximityReward");
-
-    if (closestA < closestB) {
-      this.addFitness("A", "proximity", proximityReward);
-    } else {
-      this.addFitness("B", "proximity", proximityReward);
-    }
-  }
-
-  rewardBallPossession() {
-    if (this.ball.lastTouchTeam && this.time - this.ball.lastTouchAt < 1.2) {
-      this.addFitness(this.ball.lastTouchTeam, "possession", this.getFitnessSetting("possessionReward"));
-    }
   }
 
   controlPlayer(player, dt) {
@@ -853,10 +810,7 @@ class EvolutionTrainer {
   start(config, savedData = null) {
     this.config = {
       ...config,
-      fitnessSettings: {
-        ...FITNESS_SETTINGS_DEFAULTS,
-        ...(config.fitnessSettings || {}),
-      },
+      fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
     };
     this.bestEver = null;
     this.currentA = null;
@@ -899,11 +853,10 @@ class EvolutionTrainer {
       ...fallbackConfig,
       ...(savedData.config || {}),
       populationSize: savedData.population.length,
-      fitnessSettings: {
-        ...FITNESS_SETTINGS_DEFAULTS,
+      fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
-      },
+      }),
     };
 
     this.config = mergedConfig;
@@ -1611,9 +1564,6 @@ ui.sidebarToggle.addEventListener("click", () => {
   ui.fitnessOwnGoal,
   ui.fitnessPlayerContact,
   ui.fitnessHardCollision,
-  ui.fitnessPossession,
-  ui.fitnessProximity,
-  ui.fitnessScoreDiff,
 ].forEach((input) => {
   input.addEventListener("input", () => {
     applyLiveFitnessSettings();
