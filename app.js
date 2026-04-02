@@ -21,6 +21,7 @@ const BALL_POSSESSION_REWARD = 0.02;
 const PLAYER_CONTACT_PENALTY = 0.01;
 const HARD_COLLISION_THRESHOLD = 1.5;
 const HARD_COLLISION_PENALTY = 1.5;
+const MAX_LOG_ENTRIES = 500;
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -114,7 +115,10 @@ function shuffle(array) {
 
 function addLog(message) {
   logs.unshift(message);
-  ui.log.textContent = logs.slice(0, 16).join("\n");
+  if (logs.length > MAX_LOG_ENTRIES) {
+    logs.length = MAX_LOG_ENTRIES;
+  }
+  ui.log.textContent = logs.join("\n");
 }
 
 class NeuralNetwork {
