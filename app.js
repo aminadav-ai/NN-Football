@@ -1473,9 +1473,12 @@ function drawMatch(match) {
 
   const overlayX = 14;
   const overlayY = 14;
-  const overlayGap = 12;
-  const scoreBoxWidth = Math.min(260, Math.max(190, ui.canvas.width * 0.36));
-  const scoreBoxHeight = 52;
+  const overlayGap = 6;
+  const overlayTotalWidth = ui.canvas.width * 0.25;
+  const scoreBoxWidth = overlayTotalWidth * 0.7;
+  const timeBoxWidth = overlayTotalWidth * 0.3 - overlayGap;
+  const scoreBoxHeight = 40;
+  const timeBoxHeight = 40;
   const scoreBoxX = overlayX;
   const scoreBoxY = overlayY;
   const scoreCenterY = scoreBoxY + scoreBoxHeight / 2;
@@ -1484,24 +1487,22 @@ function drawMatch(match) {
   ctx.fillRect(scoreBoxX, scoreBoxY, scoreBoxWidth, scoreBoxHeight);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "bold 18px Inter, sans-serif";
+  ctx.font = "bold 11px Inter, sans-serif";
   ctx.fillStyle = TEAM_COLORS.A;
-  ctx.fillText(`#${match.individualA.id}`, scoreBoxX + 42, scoreCenterY + 1);
+  ctx.fillText(`#${match.individualA.id}`, scoreBoxX + 18, scoreCenterY + 0.5);
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 28px Inter, sans-serif";
-  ctx.fillText(`${match.score.A} : ${match.score.B}`, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 1);
+  ctx.font = "bold 20px Inter, sans-serif";
+  ctx.fillText(`${match.score.A}:${match.score.B}`, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 0.5);
   ctx.fillStyle = TEAM_COLORS.B;
-  ctx.font = "bold 18px Inter, sans-serif";
-  ctx.fillText(`#${match.individualB.id}`, scoreBoxX + scoreBoxWidth - 42, scoreCenterY + 1);
+  ctx.font = "bold 11px Inter, sans-serif";
+  ctx.fillText(`#${match.individualB.id}`, scoreBoxX + scoreBoxWidth - 18, scoreCenterY + 0.5);
 
   const timeBoxX = scoreBoxX + scoreBoxWidth + overlayGap;
   const timeBoxY = overlayY;
-  const timeBoxWidth = Math.max(80, ui.canvas.width - overlayX - timeBoxX);
-  const timeBoxHeight = 52;
-  const timeBarX = timeBoxX + 6;
-  const timeBarY = timeBoxY + 10;
-  const timeBarWidth = Math.max(20, timeBoxWidth - 12);
-  const timeBarHeight = timeBoxHeight - 20;
+  const timeBarX = timeBoxX + 4;
+  const timeBarY = timeBoxY + 8;
+  const timeBarWidth = Math.max(18, timeBoxWidth - 8);
+  const timeBarHeight = timeBoxHeight - 16;
   const fillWidth = timeBarWidth * progress;
 
   ctx.fillStyle = "rgba(0,0,0,0.42)";
@@ -1516,8 +1517,8 @@ function drawMatch(match) {
   ctx.rect(timeBarX, timeBarY, fillWidth, timeBarHeight);
   ctx.clip();
   ctx.strokeStyle = "rgba(255,255,255,0.26)";
-  ctx.lineWidth = 5;
-  for (let stripeX = timeBarX - timeBarHeight; stripeX < timeBarX + fillWidth + timeBarHeight; stripeX += 16) {
+  ctx.lineWidth = 4;
+  for (let stripeX = timeBarX - timeBarHeight; stripeX < timeBarX + fillWidth + timeBarHeight; stripeX += 12) {
     ctx.beginPath();
     ctx.moveTo(stripeX, timeBarY + timeBarHeight);
     ctx.lineTo(stripeX + timeBarHeight, timeBarY);
