@@ -762,7 +762,7 @@ class FootballMatch {
     }
   }
 
-  resetAfterGoal() {
+  resetBallToCenter() {
     this.ball.x = FIELD.width / 2;
     this.ball.y = FIELD.height / 2;
     this.ball.vx = randRange(-0.6, 0.6);
@@ -770,6 +770,10 @@ class FootballMatch {
     this.ball.lastTouchTeam = null;
     this.ball.lastTouchAt = -999;
     this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
+  }
+
+  resetAfterGoal() {
+    this.resetBallToCenter();
     this.spawnPlayers();
   }
 
@@ -912,6 +916,15 @@ class FootballMatch {
     this.ball.y += this.ball.vy * dt;
     this.ball.vx *= 0.992;
     this.ball.vy *= 0.992;
+
+    const inCorner = (
+      (this.ball.x - this.ball.radius <= 0 || this.ball.x + this.ball.radius >= FIELD.width)
+      && (this.ball.y - this.ball.radius <= 0 || this.ball.y + this.ball.radius >= FIELD.height)
+    );
+    if (inCorner) {
+      this.resetBallToCenter();
+      return;
+    }
 
     if (this.ball.y - this.ball.radius <= 0) {
       this.ball.y = this.ball.radius;
