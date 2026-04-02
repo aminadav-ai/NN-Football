@@ -155,6 +155,11 @@ function addLog(message) {
   ui.log.textContent = logs.join("\n");
 }
 
+function clearLogs() {
+  logs.length = 0;
+  ui.log.textContent = "";
+}
+
 function toFiniteNumber(value, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
@@ -1388,8 +1393,12 @@ function readConfig() {
 function drawField() {
   ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
-  ctx.fillStyle = "#1b7f38";
-  ctx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
+  const stripeCount = 10;
+  const stripeWidth = ui.canvas.width / stripeCount;
+  for (let i = 0; i < stripeCount; i += 1) {
+    ctx.fillStyle = i % 2 === 0 ? "#2f9f49" : "#23833b";
+    ctx.fillRect(i * stripeWidth, 0, stripeWidth + 1, ui.canvas.height);
+  }
 
   ctx.strokeStyle = "rgba(255,255,255,0.9)";
   ctx.lineWidth = 2;
@@ -1585,6 +1594,7 @@ function tick(timestamp) {
 }
 
 ui.startBtn.addEventListener("click", () => {
+  clearLogs();
   const trainer = new EvolutionTrainer(addLog);
   state.trainer = trainer;
   state.isPaused = false;
