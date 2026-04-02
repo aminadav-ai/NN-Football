@@ -130,6 +130,32 @@ button.secondary-action {
   margin-top: 16px;
 }
 
+.fitness-settings {
+  overflow: hidden;
+}
+
+.fitness-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.fitness-settings-grid label {
+  font-size: 0.88rem;
+  min-width: 0;
+}
+
+.fitness-settings-grid input {
+  font-size: 0.95rem;
+  padding: 8px 10px;
+}
+
+.fitness-settings-hint {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
 .stats-list {
   display: grid;
   gap: 8px;

@@ -60,21 +60,48 @@
           </div>
         </section>
 
-        <section class="legend">
-          <h2>Фитнес</h2>
-          <ul>
-            <li>Касание мяча: +1.5</li>
-            <li>Гол сопернику: +35</li>
-            <li>Пропущенный гол: −10</li>
-            <li>Автогол: −25 дополнительно</li>
-            <li>Касание игрока (инициатор): −0.01 за шаг</li>
-            <li>Сильный толчок игрока (инициатор): −1.5</li>
-            <li>Владение мячом после последнего касания: +0.02 за шаг</li>
-            <li>Команда с ближайшим игроком к мячу: +0.01 за шаг</li>
-            <li>Разница счёта в конце матча: ±4 за гол</li>
-          </ul>
+        <section class="legend fitness-settings">
+          <h2>Настройки фитнеса</h2>
+          <div class="fitness-settings-grid">
+            <label>
+              Касание мяча
+              <input id="fitnessBallTouch" type="number" step="0.01" value="1.5" />
+            </label>
+            <label>
+              Гол сопернику
+              <input id="fitnessGoal" type="number" step="0.1" value="35" />
+            </label>
+            <label>
+              Пропущенный гол
+              <input id="fitnessConceded" type="number" step="0.1" value="-10" />
+            </label>
+            <label>
+              Автогол
+              <input id="fitnessOwnGoal" type="number" step="0.1" value="-25" />
+            </label>
+            <label>
+              Касание игрока
+              <input id="fitnessPlayerContact" type="number" step="0.01" value="-0.01" />
+            </label>
+            <label>
+              Сильный толчок
+              <input id="fitnessHardCollision" type="number" step="0.1" value="-1.5" />
+            </label>
+            <label>
+              Владение мячом
+              <input id="fitnessPossession" type="number" step="0.01" value="0.02" />
+            </label>
+            <label>
+              Ближайший к мячу
+              <input id="fitnessProximity" type="number" step="0.01" value="0.01" />
+            </label>
+            <label>
+              Разница счёта за гол
+              <input id="fitnessScoreDiff" type="number" step="0.1" value="4" />
+            </label>
+          </div>
+          <p class="fitness-settings-hint">Изменения применяются сразу и сохраняются вместе с поколением.</p>
         </section>
-
         <section>
           <h2>Журнал</h2>
           <pre id="log"></pre>

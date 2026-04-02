@@ -16,15 +16,21 @@ const STEP_DT = 0.08;
 const FAST_STEPS = 24;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
-const BALL_PROXIMITY_REWARD = 0.01;
-const BALL_POSSESSION_REWARD = 0.02;
-const PLAYER_CONTACT_PENALTY = 0.01;
+const FITNESS_SETTINGS_DEFAULTS = {
+  ballTouchReward: 1.5,
+  goalReward: 35,
+  concededPenalty: -10,
+  ownGoalPenalty: -25,
+  playerContactPenalty: -0.01,
+  hardCollisionPenalty: -1.5,
+  possessionReward: 0.02,
+  proximityReward: 0.01,
+  scoreDiffReward: 4,
+};
 const HARD_COLLISION_THRESHOLD = 1.5;
-const HARD_COLLISION_PENALTY = 1.5;
 const MAX_LOG_ENTRIES = 500;
 const POPULATION_STORAGE_KEY = "flower-3.population.v1";
-const FITNESS_BREAKDOWN_ROWS = [
-  { key: "ballTouch", label: "Касание мяча" },
+const FITNESS_BREAKDOWN_ROWS = [  { key: "ballTouch", label: "Касание мяча" },
   { key: "goals", label: "Гол сопернику" },
   { key: "conceded", label: "Пропущенный гол" },
   { key: "ownGoal", label: "Автогол" },
@@ -49,6 +55,15 @@ const ui = {
   neuronsPerLayer: document.getElementById("neuronsPerLayer"),
   populationSize: document.getElementById("populationSize"),
   matchMinutes: document.getElementById("matchMinutes"),
+  fitnessBallTouch: document.getElementById("fitnessBallTouch"),
+  fitnessGoal: document.getElementById("fitnessGoal"),
+  fitnessConceded: document.getElementById("fitnessConceded"),
+  fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
+  fitnessPlayerContact: document.getElementById("fitnessPlayerContact"),
+  fitnessHardCollision: document.getElementById("fitnessHardCollision"),
+  fitnessPossession: document.getElementById("fitnessPossession"),
+  fitnessProximity: document.getElementById("fitnessProximity"),
+  fitnessScoreDiff: document.getElementById("fitnessScoreDiff"),
   startBtn: document.getElementById("startBtn"),
   loadBtn: document.getElementById("loadBtn"),
   slowBtn: document.getElementById("slowBtn"),
@@ -140,6 +155,38 @@ function addLog(message) {
   ui.log.textContent = logs.join("\n");
 }
 
+function readNumberInput(element, fallback) {
+  const value = Number(element.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readFitnessSettings() {
+  return {
+    ballTouchReward: readNumberInput(ui.fitnessBallTouch, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
+    goalReward: readNumberInput(ui.fitnessGoal, FITNESS_SETTINGS_DEFAULTS.goalReward),
+    concededPenalty: readNumberInput(ui.fitnessConceded, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
+    ownGoalPenalty: readNumberInput(ui.fitnessOwnGoal, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
+    playerContactPenalty: readNumberInput(ui.fitnessPlayerContact, FITNESS_SETTINGS_DEFAULTS.playerContactPenalty),
+    hardCollisionPenalty: readNumberInput(ui.fitnessHardCollision, FITNESS_SETTINGS_DEFAULTS.hardCollisionPenalty),
+    possessionReward: readNumberInput(ui.fitnessPossession, FITNESS_SETTINGS_DEFAULTS.possessionReward),
+    proximityReward: readNumberInput(ui.fitnessProximity, FITNESS_SETTINGS_DEFAULTS.proximityReward),
+    scoreDiffReward: readNumberInput(ui.fitnessScoreDiff, FITNESS_SETTINGS_DEFAULTS.scoreDiffReward),
+  };
+}
+
+function applyLiveFitnessSettings() {
+  const fitnessSettings = readFitnessSettings();
+
+  if (state.trainer?.config) {
+    state.trainer.config.fitnessSettings = fitnessSettings;
+    if (state.trainer.currentMatch?.config) {
+      state.trainer.currentMatch.config.fitnessSettings = fitnessSettings;
+    }
+  }
+
+  return fitnessSettings;
+}
+
 function createEmptyFitnessBreakdown() {
   return {
     ballTouch: 0,
@@ -186,6 +233,17 @@ function setControlsFromConfig(config) {
   ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 64));
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
+
+  const fitnessSettings = { ...FITNESS_SETTINGS_DEFAULTS, ...(config.fitnessSettings || {}) };
+  ui.fitnessBallTouch.value = String(fitnessSettings.ballTouchReward);
+  ui.fitnessGoal.value = String(fitnessSettings.goalReward);
+  ui.fitnessConceded.value = String(fitnessSettings.concededPenalty);
+  ui.fitnessOwnGoal.value = String(fitnessSettings.ownGoalPenalty);
+  ui.fitnessPlayerContact.value = String(fitnessSettings.playerContactPenalty);
+  ui.fitnessHardCollision.value = String(fitnessSettings.hardCollisionPenalty);
+  ui.fitnessPossession.value = String(fitnessSettings.possessionReward);
+  ui.fitnessProximity.value = String(fitnessSettings.proximityReward);
+  ui.fitnessScoreDiff.value = String(fitnessSettings.scoreDiffReward);
 }
 
 function serializeNetwork(network) {
@@ -448,6 +506,11 @@ class FootballMatch {
     this.fitnessBreakdown[team][component] += amount;
   }
 
+  getFitnessSetting(key) {
+    const value = this.config?.fitnessSettings?.[key];
+    return Number.isFinite(value) ? value : FITNESS_SETTINGS_DEFAULTS[key];
+  }
+
   spawnPlayers() {
     this.players = [];
     this.createTeam("A", this.individualA.network);
@@ -522,8 +585,9 @@ class FootballMatch {
     if (this.done) return;
     this.done = true;
     const diff = this.score.A - this.score.B;
-    this.addFitness("A", "scoreDiff", diff * 4);
-    this.addFitness("B", "scoreDiff", -diff * 4);
+    const scoreDiffReward = this.getFitnessSetting("scoreDiffReward");
+    this.addFitness("A", "scoreDiff", diff * scoreDiffReward);
+    this.addFitness("B", "scoreDiff", -diff * scoreDiffReward);
   }
 
   rewardBallProximity() {
@@ -543,16 +607,18 @@ class FootballMatch {
       return;
     }
 
+    const proximityReward = this.getFitnessSetting("proximityReward");
+
     if (closestA < closestB) {
-      this.addFitness("A", "proximity", BALL_PROXIMITY_REWARD);
+      this.addFitness("A", "proximity", proximityReward);
     } else {
-      this.addFitness("B", "proximity", BALL_PROXIMITY_REWARD);
+      this.addFitness("B", "proximity", proximityReward);
     }
   }
 
   rewardBallPossession() {
     if (this.ball.lastTouchTeam && this.time - this.ball.lastTouchAt < 1.2) {
-      this.addFitness(this.ball.lastTouchTeam, "possession", BALL_POSSESSION_REWARD);
+      this.addFitness(this.ball.lastTouchTeam, "possession", this.getFitnessSetting("possessionReward"));
     }
   }
 
@@ -612,11 +678,11 @@ class FootballMatch {
         const { touching, impact, initiator } = resolveElasticCollision(a, b, 0.88);
 
         if (touching && initiator) {
-          this.addFitness(initiator.team, "playerContact", -PLAYER_CONTACT_PENALTY);
+          this.addFitness(initiator.team, "playerContact", this.getFitnessSetting("playerContactPenalty"));
         }
 
         if (impact > HARD_COLLISION_THRESHOLD && initiator) {
-          this.addFitness(initiator.team, "hardCollision", -HARD_COLLISION_PENALTY);
+          this.addFitness(initiator.team, "hardCollision", this.getFitnessSetting("hardCollisionPenalty"));
         }
       }
     }
@@ -642,7 +708,7 @@ class FootballMatch {
         this.ball.vy += ny * push + player.vy * 0.35;
 
         if (this.time - player.lastTouchAt > 0.35) {
-          this.addFitness(player.team, "ballTouch", 1.5);
+          this.addFitness(player.team, "ballTouch", this.getFitnessSetting("ballTouchReward"));
           player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
           this.ball.lastTouchAt = this.time;
@@ -709,11 +775,11 @@ class FootballMatch {
   registerGoal(scoringTeam) {
     const concedingTeam = scoringTeam === "A" ? "B" : "A";
     this.score[scoringTeam] += 1;
-    this.addFitness(scoringTeam, "goals", 35);
-    this.addFitness(concedingTeam, "conceded", -10);
+    this.addFitness(scoringTeam, "goals", this.getFitnessSetting("goalReward"));
+    this.addFitness(concedingTeam, "conceded", this.getFitnessSetting("concededPenalty"));
 
     if (this.ball.lastTouchTeam === concedingTeam) {
-      this.addFitness(concedingTeam, "ownGoal", -25);
+      this.addFitness(concedingTeam, "ownGoal", this.getFitnessSetting("ownGoalPenalty"));
     }
 
     this.onEvent?.(
@@ -1180,6 +1246,7 @@ function readConfig() {
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 64),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
+    fitnessSettings: readFitnessSettings(),
   };
 }
 
@@ -1380,6 +1447,22 @@ ui.fastBtn.addEventListener("click", () => {
 ui.showBtn.addEventListener("click", () => {
   state.showGames = true;
   addLog("Показ матчей включён.");
+});
+
+[
+  ui.fitnessBallTouch,
+  ui.fitnessGoal,
+  ui.fitnessConceded,
+  ui.fitnessOwnGoal,
+  ui.fitnessPlayerContact,
+  ui.fitnessHardCollision,
+  ui.fitnessPossession,
+  ui.fitnessProximity,
+  ui.fitnessScoreDiff,
+].forEach((input) => {
+  input.addEventListener("input", () => {
+    applyLiveFitnessSettings();
+  });
 });
 
 ui.pitchStage.addEventListener("pointerdown", startPitchResize);
