@@ -17,6 +17,7 @@ const FAST_STEPS = 24;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const BALL_PROXIMITY_REWARD = 0.01;
+const BALL_POSSESSION_REWARD = 0.02;
 const PLAYER_CONTACT_PENALTY = 0.01;
 const HARD_COLLISION_THRESHOLD = 1.5;
 const HARD_COLLISION_PENALTY = 1.5;
@@ -321,10 +322,7 @@ class FootballMatch {
     this.handlePlayerCollisions();
     this.updateBall(dt);
     this.rewardBallProximity();
-
-    if (this.ball.lastTouchTeam && this.time - this.ball.lastTouchAt < 1.2) {
-      this.teamFitness[this.ball.lastTouchTeam] += 0.02;
-    }
+    this.rewardBallPossession();
 
     if (this.time >= this.duration) {
       this.finish();
@@ -360,6 +358,12 @@ class FootballMatch {
       this.teamFitness.A += BALL_PROXIMITY_REWARD;
     } else {
       this.teamFitness.B += BALL_PROXIMITY_REWARD;
+    }
+  }
+
+  rewardBallPossession() {
+    if (this.ball.lastTouchTeam && this.time - this.ball.lastTouchAt < 1.2) {
+      this.teamFitness[this.ball.lastTouchTeam] += BALL_POSSESSION_REWARD;
     }
   }
 
