@@ -413,11 +413,10 @@ class FootballMatch {
       for (let j = i + 1; j < this.players.length; j += 1) {
         const a = this.players[i];
         const b = this.players[j];
-        const impact = resolveElasticCollision(a, b, 0.88);
+        const { impact, initiator } = resolveElasticCollision(a, b, 0.88);
 
-        if (impact > 1.5) {
-          this.teamFitness[a.team] -= 1.5;
-          this.teamFitness[b.team] -= 1.5;
+        if (impact > 1.5 && initiator) {
+          this.teamFitness[initiator.team] -= 1.5;
         }
       }
     }
@@ -816,11 +815,25 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   const distance = Math.hypot(dx, dy) || 0.0001;
   const minDistance = a.radius + b.radius;
 
-  if (distance >= minDistance) return 0;
+  if (distance >= minDistance) {
+    return { impact: 0, initiator: null };
+  }
 
   const nx = dx / distance;
   const ny = dy / distance;
   const overlap = minDistance - distance;
+
+  const aTowardB = Math.max(0, a.vx * nx + a.vy * ny);
+  const bTowardA = Math.max(0, -(b.vx * nx + b.vy * ny));
+  let initiator = null;
+
+  if (aTowardB > bTowardA + 0.05) {
+    initiator = a;
+  } else if (bTowardA > aTowardB + 0.05) {
+    initiator = b;
+  } else if (aTowardB > 0 || bTowardA > 0) {
+    initiator = aTowardB >= bTowardA ? a : b;
+  }
 
   a.x -= nx * overlap * 0.5;
   a.y -= ny * overlap * 0.5;
@@ -828,7 +841,9 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   b.y += ny * overlap * 0.5;
 
   const relVel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-  if (relVel >= 0) return 0;
+  if (relVel >= 0) {
+    return { impact: 0, initiator };
+  }
 
   const impulse = (-(1 + elasticity) * relVel) / 2;
   a.vx -= impulse * nx;
@@ -836,7 +851,7 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
   b.vx += impulse * nx;
   b.vy += impulse * ny;
 
-  return Math.abs(relVel);
+  return { impact: Math.abs(relVel), initiator };
 }
 
 function readConfig() {
