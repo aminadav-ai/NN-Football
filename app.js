@@ -90,6 +90,10 @@ const state = {
   trainer: null,
   worker: null,
   workerStatus: null,
+  previousWorkerStatus: null,
+  workerStatusAt: 0,
+  previousWorkerStatusAt: 0,
+  workerSnapshotInterval: 33,
   workerSaveData: null,
   lastFrameTime: null,
   pitchWidth: 550,
@@ -179,7 +183,22 @@ function handleWorkerMessage(event) {
   }
 
   if (type === "status") {
+    const snapshotAt = Number.isFinite(payload?.snapshotAt) ? payload.snapshotAt : performance.now();
+
+    if (state.workerStatus) {
+      state.previousWorkerStatus = state.workerStatus;
+      state.previousWorkerStatusAt = state.workerStatusAt || snapshotAt;
+      const snapshotInterval = snapshotAt - state.previousWorkerStatusAt;
+      if (Number.isFinite(snapshotInterval) && snapshotInterval > 0) {
+        state.workerSnapshotInterval = clamp(snapshotInterval, 16, 120);
+      }
+    } else {
+      state.previousWorkerStatus = null;
+      state.previousWorkerStatusAt = 0;
+    }
+
     state.workerStatus = payload || null;
+    state.workerStatusAt = snapshotAt;
     if (typeof payload?.isPaused === "boolean") {
       state.isPaused = payload.isPaused;
     }
@@ -216,6 +235,71 @@ function ensureWorker() {
   });
   state.worker = worker;
   return worker;
+}
+
+function canInterpolateMatchStates(previousMatch, currentMatch) {
+  if (!previousMatch || !currentMatch) {
+    return false;
+  }
+
+  const previousA = previousMatch.individualAId ?? previousMatch.individualA?.id ?? null;
+  const previousB = previousMatch.individualBId ?? previousMatch.individualB?.id ?? null;
+  const currentA = currentMatch.individualAId ?? currentMatch.individualA?.id ?? null;
+  const currentB = currentMatch.individualBId ?? currentMatch.individualB?.id ?? null;
+
+  return previousA === currentA
+    && previousB === currentB
+    && (previousMatch.players?.length || 0) === (currentMatch.players?.length || 0)
+    && previousMatch.score?.A === currentMatch.score?.A
+    && previousMatch.score?.B === currentMatch.score?.B
+    && Boolean(previousMatch.done) === Boolean(currentMatch.done);
+}
+
+function interpolateMatchState(previousMatch, currentMatch, alpha) {
+  if (!canInterpolateMatchStates(previousMatch, currentMatch)) {
+    return currentMatch;
+  }
+
+  const t = clamp(alpha, 0, 1);
+  return {
+    ...currentMatch,
+    time: lerp(Number(previousMatch.time) || 0, Number(currentMatch.time) || 0, t),
+    ball: {
+      ...currentMatch.ball,
+      x: lerp(Number(previousMatch.ball?.x) || 0, Number(currentMatch.ball?.x) || 0, t),
+      y: lerp(Number(previousMatch.ball?.y) || 0, Number(currentMatch.ball?.y) || 0, t),
+      vx: lerp(Number(previousMatch.ball?.vx) || 0, Number(currentMatch.ball?.vx) || 0, t),
+      vy: lerp(Number(previousMatch.ball?.vy) || 0, Number(currentMatch.ball?.vy) || 0, t),
+    },
+    players: currentMatch.players.map((player, index) => {
+      const previousPlayer = previousMatch.players?.[index] || player;
+      const previousDir = Number(previousPlayer.dir) || 0;
+      const currentDir = Number(player.dir) || 0;
+      return {
+        ...player,
+        x: lerp(Number(previousPlayer.x) || 0, Number(player.x) || 0, t),
+        y: lerp(Number(previousPlayer.y) || 0, Number(player.y) || 0, t),
+        dir: normalizeAngle(previousDir + normalizeAngle(currentDir - previousDir) * t),
+      };
+    }),
+  };
+}
+
+function getRenderedMatch(frameTime = performance.now()) {
+  const currentMatch = state.workerStatus?.currentMatch || null;
+  if (!currentMatch) {
+    return null;
+  }
+
+  const previousMatch = state.previousWorkerStatus?.currentMatch || null;
+  if (!canInterpolateMatchStates(previousMatch, currentMatch)) {
+    return currentMatch;
+  }
+
+  const interval = Math.max(16, state.workerSnapshotInterval || 33);
+  const elapsedSinceSnapshot = Math.max(0, frameTime - state.workerStatusAt);
+  const alpha = clamp(elapsedSinceSnapshot / interval, 0, 1);
+  return interpolateMatchState(previousMatch, currentMatch, alpha);
 }
 
 function toFiniteNumber(value, fallback) {
@@ -1650,13 +1734,14 @@ function drawCenterText(text) {
   ctx.textAlign = "start";
 }
 
-function updateStats() {
+function updateStats(frameTime = performance.now()) {
   const status = state.workerStatus || {
     generation: 0,
     matchInfo: "—",
     bestFitness: 0,
     currentMatch: null,
   };
+  const renderedMatch = getRenderedMatch(frameTime);
 
   ui.generation.textContent = String(status.generation);
   ui.matchInfo.textContent = status.matchInfo;
@@ -1666,11 +1751,11 @@ function updateStats() {
 
   updatePlaybackControls();
   updateMatchFitnessTables(status.currentMatch);
-  drawMatch(status.currentMatch);
+  drawMatch(renderedMatch || status.currentMatch);
 }
 
-function tick() {
-  updateStats();
+function tick(timestamp) {
+  updateStats(timestamp);
   requestAnimationFrame(tick);
 }
 
@@ -1680,6 +1765,9 @@ ui.startBtn.addEventListener("click", () => {
   nextIndividualId = 0;
   state.trainer = null;
   state.workerStatus = null;
+  state.previousWorkerStatus = null;
+  state.workerStatusAt = 0;
+  state.previousWorkerStatusAt = 0;
   state.workerSaveData = null;
   state.isPaused = false;
   postToWorker("startNew", { config: readConfig(), resetIds: true });
@@ -1699,6 +1787,9 @@ ui.loadBtn.addEventListener("click", () => {
 
   state.trainer = null;
   state.workerStatus = null;
+  state.previousWorkerStatus = null;
+  state.workerStatusAt = 0;
+  state.previousWorkerStatusAt = 0;
   state.workerSaveData = savedData;
   state.isPaused = false;
   postToWorker("loadSaved", { config: readConfig(), savedData });

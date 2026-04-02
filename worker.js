@@ -229,6 +229,7 @@ function emitStatus(force = false) {
   }
 
   const payload = {
+    snapshotAt: now,
     generation: trainer?.generation || 0,
     matchInfo: trainer?.currentMatch
       ? `${trainer.matchCursor + 1}/${trainer.schedule.length} · ${trainer.currentA.id} vs ${trainer.currentB.id}`
