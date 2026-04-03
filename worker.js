@@ -16,6 +16,7 @@ const STEP_DT = 0.08;
 const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
+const MATCH_RATE_WINDOW_MS = 3000;
 const STATUS_INTERVAL_FULL_MS = 33;
 const STATUS_INTERVAL_SUMMARY_MS = 120;
 const AUTO_SAVE_INTERVAL_MS = 4000;
@@ -266,6 +267,7 @@ function emitStatus(force = false) {
     matchInfo: trainer?.currentMatch
       ? `${trainer.matchCursor + 1}/${trainer.schedule.length} · ${trainer.currentA.id} vs ${trainer.currentB.id}`
       : "—",
+    gamesPerSecond: runtime.isPaused ? 0 : (trainer?.getMatchesPerSecond(now) || 0),
     bestFitness: trainer?.bestFitness || 0,
     running: Boolean(trainer?.running),
     isPaused: runtime.isPaused,
@@ -1001,6 +1003,28 @@ class EvolutionTrainer {
     this.config = null;
     this.currentA = null;
     this.currentB = null;
+    this.completedMatchTimes = [];
+  }
+
+  pruneCompletedMatchTimes(now = performance.now()) {
+    const cutoff = now - MATCH_RATE_WINDOW_MS;
+    while (this.completedMatchTimes.length && this.completedMatchTimes[0] < cutoff) {
+      this.completedMatchTimes.shift();
+    }
+  }
+
+  recordCompletedMatch(now = performance.now()) {
+    this.completedMatchTimes.push(now);
+    this.pruneCompletedMatchTimes(now);
+  }
+
+  getMatchesPerSecond(now = performance.now()) {
+    if (!this.running) {
+      return 0;
+    }
+
+    this.pruneCompletedMatchTimes(now);
+    return this.completedMatchTimes.length / (MATCH_RATE_WINDOW_MS / 1000);
   }
 
   start(config, savedData = null) {
@@ -1220,6 +1244,7 @@ class EvolutionTrainer {
     this.currentA.fitness += this.currentMatch.teamFitness.A;
     this.currentB.fitness += this.currentMatch.teamFitness.B;
 
+    this.recordCompletedMatch();
     this.bestFitness = Math.max(this.bestFitness, this.currentA.fitness, this.currentB.fitness);
     this.matchCursor += 1;
 

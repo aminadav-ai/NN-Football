@@ -17,6 +17,7 @@ const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
+const MATCH_RATE_WINDOW_MS = 3000;
 const FITNESS_SETTINGS_DEFAULTS = {
   goalReward: 35,
   concededPenalty: -10,
@@ -69,6 +70,7 @@ const ui = {
   fitnessTableCombined: document.getElementById("fitnessTableCombined"),
   generation: document.getElementById("generation"),
   matchInfo: document.getElementById("matchInfo"),
+  gamesPerSecond: document.getElementById("gamesPerSecond"),
   bestFitness: document.getElementById("bestFitness"),
   modeInfo: document.getElementById("modeInfo"),
   renderInfo: document.getElementById("renderInfo"),
@@ -450,6 +452,13 @@ function formatFitnessValue(value) {
   const normalized = Math.abs(value) < 0.0005 ? 0 : value;
   if (normalized === 0) return "0.00";
   return `${normalized > 0 ? "+" : ""}${normalized.toFixed(2)}`;
+}
+
+function formatGamesPerSecond(value) {
+  const rate = Math.max(0, toFiniteNumber(value, 0));
+  if (rate >= 100) return rate.toFixed(0);
+  if (rate >= 10) return rate.toFixed(1);
+  return rate.toFixed(2);
 }
 
 function updateMatchFitnessTables(match) {
@@ -1111,6 +1120,28 @@ class EvolutionTrainer {
     this.bestFitness = 0;
     this.currentMatch = null;
     this.config = null;
+    this.completedMatchTimes = [];
+  }
+
+  pruneCompletedMatchTimes(now = performance.now()) {
+    const cutoff = now - MATCH_RATE_WINDOW_MS;
+    while (this.completedMatchTimes.length && this.completedMatchTimes[0] < cutoff) {
+      this.completedMatchTimes.shift();
+    }
+  }
+
+  recordCompletedMatch(now = performance.now()) {
+    this.completedMatchTimes.push(now);
+    this.pruneCompletedMatchTimes(now);
+  }
+
+  getMatchesPerSecond(now = performance.now()) {
+    if (!this.running) {
+      return 0;
+    }
+
+    this.pruneCompletedMatchTimes(now);
+    return this.completedMatchTimes.length / (MATCH_RATE_WINDOW_MS / 1000);
   }
 
   start(config, savedData = null) {
@@ -1335,6 +1366,7 @@ class EvolutionTrainer {
     this.currentA.fitness += this.currentMatch.teamFitness.A;
     this.currentB.fitness += this.currentMatch.teamFitness.B;
 
+    this.recordCompletedMatch();
     this.bestFitness = Math.max(this.bestFitness, this.currentA.fitness, this.currentB.fitness);
     this.matchCursor += 1;
 
@@ -1456,6 +1488,7 @@ class EvolutionTrainer {
       matchInfo: this.currentMatch
         ? `${this.matchCursor + 1}/${this.schedule.length} · ${this.currentA.id} vs ${this.currentB.id}`
         : "—",
+      gamesPerSecond: this.getMatchesPerSecond(),
       bestFitness: this.bestFitness,
       currentMatch: this.currentMatch,
     };
@@ -1856,9 +1889,10 @@ function drawCenterText(text) {
 }
 
 function updateStats(frameTime = performance.now()) {
-  const status = state.workerStatus || {
+  const status = state.workerStatus || state.trainer?.getStatus?.() || {
     generation: 0,
     matchInfo: "—",
+    gamesPerSecond: 0,
     bestFitness: 0,
     currentMatch: null,
   };
@@ -1867,6 +1901,7 @@ function updateStats(frameTime = performance.now()) {
 
   ui.generation.textContent = String(status.generation);
   ui.matchInfo.textContent = status.matchInfo;
+  ui.gamesPerSecond.textContent = formatGamesPerSecond(status.gamesPerSecond);
   ui.bestFitness.textContent = status.bestFitness.toFixed(2);
   ui.modeInfo.textContent = state.isPaused ? `${state.mode} · пауза` : state.mode;
   ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
