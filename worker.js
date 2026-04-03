@@ -200,6 +200,8 @@ function createSavePayload() {
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
+    generationBestFitness: trainer.bestFitness,
+    bestEverFitness: trainer.bestEver?.fitness || 0,
     nextIndividualId,
     config: trainer.config
       ? {
@@ -269,6 +271,7 @@ function emitStatus(force = false) {
       : "—",
     gamesPerSecond: runtime.isPaused ? 0 : (trainer?.getMatchesPerSecond(now) || 0),
     bestFitness: trainer?.bestFitness || 0,
+    bestEverFitness: trainer?.bestEver?.fitness || 0,
     running: Boolean(trainer?.running),
     isPaused: runtime.isPaused,
     currentMatch: trainer?.currentMatch
@@ -1087,9 +1090,10 @@ class EvolutionTrainer {
     }));
 
     const maxLoadedId = this.population.reduce((max, individual) => Math.max(max, individual.id), 0);
+    const loadedGenerationBest = this.population.reduce((max, individual) => Math.max(max, individual.fitness), 0);
     nextIndividualId = Math.max(nextIndividualId, Number(savedData.nextIndividualId) || 0, maxLoadedId);
     this.generation = Math.max(1, Math.floor(Number(savedData.generation) || 1));
-    this.bestFitness = Number(savedData.bestFitness) || 0;
+    this.bestFitness = loadedGenerationBest;
     this.bestEver = savedData.bestEver?.network
       ? {
           id: Number(savedData.bestEver.id) || 0,
@@ -1194,6 +1198,7 @@ class EvolutionTrainer {
   }
 
   prepareGeneration() {
+    this.bestFitness = 0;
     for (const individual of this.population) {
       individual.fitness = 0;
     }
@@ -1337,7 +1342,6 @@ class EvolutionTrainer {
 
     this.population = nextGeneration;
     this.generation += 1;
-    this.bestFitness = Math.max(this.bestFitness, leader.fitness);
     this.prepareGeneration();
     emitSaveData(true);
   }

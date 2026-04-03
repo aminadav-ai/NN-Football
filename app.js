@@ -75,6 +75,7 @@ const ui = {
   matchInfo: document.getElementById("matchInfo"),
   gamesPerSecond: document.getElementById("gamesPerSecond"),
   bestFitness: document.getElementById("bestFitness"),
+  bestEverFitness: document.getElementById("bestEverFitness"),
   modeInfo: document.getElementById("modeInfo"),
   renderInfo: document.getElementById("renderInfo"),
   saveStatus: document.getElementById("saveStatus"),
@@ -582,7 +583,9 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   ui.saveStatus.classList.remove("ready", "error");
 
   if (savedData) {
-    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation}, лучший фитнес ${Number(savedData.bestFitness || 0).toFixed(2)}`;
+    const generationBest = Number(savedData.generationBestFitness ?? savedData.bestFitness) || 0;
+    const bestEverFitness = Number(savedData.bestEverFitness ?? savedData.bestEver?.fitness ?? generationBest) || 0;
+    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation}, лучший в поколении ${generationBest.toFixed(2)}, рекорд ${bestEverFitness.toFixed(2)}`;
     ui.saveStatus.classList.add("ready");
     return;
   }
@@ -606,6 +609,8 @@ function buildSavePayloadFromTrainer(trainer) {
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
+    generationBestFitness: trainer.bestFitness,
+    bestEverFitness: trainer.bestEver?.fitness || 0,
     nextIndividualId,
     config: trainer.config
       ? {
@@ -1290,9 +1295,10 @@ class EvolutionTrainer {
     }));
 
     const maxLoadedId = this.population.reduce((max, individual) => Math.max(max, individual.id), 0);
+    const loadedGenerationBest = this.population.reduce((max, individual) => Math.max(max, individual.fitness), 0);
     nextIndividualId = Math.max(nextIndividualId, Number(savedData.nextIndividualId) || 0, maxLoadedId);
     this.generation = Math.max(1, Math.floor(Number(savedData.generation) || 1));
-    this.bestFitness = Number(savedData.bestFitness) || 0;
+    this.bestFitness = loadedGenerationBest;
     this.bestEver = savedData.bestEver?.network
       ? {
           id: Number(savedData.bestEver.id) || 0,
@@ -1397,6 +1403,7 @@ class EvolutionTrainer {
   }
 
   prepareGeneration() {
+    this.bestFitness = 0;
     for (const individual of this.population) {
       individual.fitness = 0;
     }
@@ -1549,7 +1556,6 @@ class EvolutionTrainer {
 
     this.population = nextGeneration;
     this.generation += 1;
-    this.bestFitness = Math.max(this.bestFitness, leader.fitness);
     this.prepareGeneration();
     savePopulation(this);
   }
@@ -1576,6 +1582,7 @@ class EvolutionTrainer {
         : "—",
       gamesPerSecond: this.getMatchesPerSecond(),
       bestFitness: this.bestFitness,
+      bestEverFitness: this.bestEver?.fitness || 0,
       currentMatch: this.currentMatch,
     };
   }
@@ -1980,6 +1987,7 @@ function updateStats(frameTime = performance.now()) {
     matchInfo: "—",
     gamesPerSecond: 0,
     bestFitness: 0,
+    bestEverFitness: 0,
     currentMatch: null,
   };
   const renderedMatch = getRenderedMatch(frameTime);
@@ -1988,7 +1996,8 @@ function updateStats(frameTime = performance.now()) {
   ui.generation.textContent = String(status.generation);
   ui.matchInfo.textContent = status.matchInfo;
   ui.gamesPerSecond.textContent = formatGamesPerSecond(status.gamesPerSecond);
-  ui.bestFitness.textContent = status.bestFitness.toFixed(2);
+  ui.bestFitness.textContent = Number(status.bestFitness || 0).toFixed(2);
+  ui.bestEverFitness.textContent = Number(status.bestEverFitness || 0).toFixed(2);
   ui.modeInfo.textContent = state.isPaused ? `${state.mode} · пауза` : state.mode;
   ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
 
