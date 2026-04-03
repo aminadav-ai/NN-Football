@@ -100,6 +100,10 @@ function toFiniteNumber(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function normalizeGoalWidth(value) {
+  return clamp(Math.round(toFiniteNumber(value, FIELD.goalWidth)), 6, 40);
+}
+
 function normalizeFitnessSettings(settings = {}) {
   return {
     goalReward: toFiniteNumber(settings.goalReward, FITNESS_SETTINGS_DEFAULTS.goalReward),
@@ -342,7 +346,7 @@ function drawCenterText(text) {
   ctx.textAlign = "start";
 }
 
-function drawField() {
+function drawField(match = null) {
   const ctx = runtime.ctx;
   const canvas = runtime.canvas;
   if (!ctx || !canvas) return;
@@ -374,7 +378,8 @@ function drawField() {
   ctx.arc(canvas.width / 2, canvas.height / 2, 90, 0, Math.PI * 2);
   ctx.stroke();
 
-  const goalHeightPx = FIELD.goalWidth * FIELD.pxPerMeter;
+  const goalWidth = normalizeGoalWidth(match?.goalWidth ?? runtime.trainer?.config?.goalWidth ?? FIELD.goalWidth);
+  const goalHeightPx = goalWidth * FIELD.pxPerMeter;
   const goalTopPx = (canvas.height - goalHeightPx) / 2;
 
   ctx.strokeRect(0, goalTopPx, 70, goalHeightPx);
@@ -702,8 +707,8 @@ class FootballMatch {
     this.score = { A: 0, B: 0 };
     this.players = [];
     this.ballTrail = [];
-    this.goalTop = (FIELD.height - FIELD.goalWidth) / 2;
-    this.goalBottom = this.goalTop + FIELD.goalWidth;
+    this.goalWidth = FIELD.goalWidth;
+    this.setGoalWidth(config.goalWidth);
 
     this.ball = {
       x: FIELD.width / 2,
@@ -725,6 +730,15 @@ class FootballMatch {
     if (this.time >= this.duration) {
       this.finish();
     }
+  }
+
+  setGoalWidth(goalWidth) {
+    this.goalWidth = normalizeGoalWidth(goalWidth);
+    if (this.config) {
+      this.config.goalWidth = this.goalWidth;
+    }
+    this.goalTop = (FIELD.height - this.goalWidth) / 2;
+    this.goalBottom = this.goalTop + this.goalWidth;
   }
 
   addFitness(team, component, amount) {
@@ -837,8 +851,8 @@ class FootballMatch {
       ...senseTargets(player, opponents),
       ...senseTargets(player, [this.ball]),
       ...senseBoundaries(player),
-      ...senseTargets(player, [{ x: ownGoalX, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 }]),
-      ...senseTargets(player, [{ x: oppGoalX, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 }]),
+      ...senseTargets(player, [{ x: ownGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
+      ...senseTargets(player, [{ x: oppGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
     ];
   }
 
@@ -1023,6 +1037,7 @@ class EvolutionTrainer {
   start(config, savedData = null) {
     this.config = {
       ...config,
+      goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
     };
     this.bestEver = null;
@@ -1066,6 +1081,7 @@ class EvolutionTrainer {
       ...fallbackConfig,
       ...(savedData.config || {}),
       populationSize: savedData.population.length,
+      goalWidth: normalizeGoalWidth(savedData.config?.goalWidth ?? fallbackConfig.goalWidth ?? FIELD.goalWidth),
       fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
@@ -1124,6 +1140,7 @@ class EvolutionTrainer {
     }
 
     const match = new FootballMatch(this.currentA, this.currentB, this.config, this.onLog);
+    match.setGoalWidth(savedMatch.goalWidth ?? this.config.goalWidth);
     match.time = Number(savedMatch.time) || 0;
     match.duration = Math.max(1, Number(savedMatch.duration) || match.duration);
     match.done = Boolean(savedMatch.done);
@@ -1248,6 +1265,19 @@ class EvolutionTrainer {
     } else {
       this.loadNextMatch();
     }
+  }
+
+  updateGoalWidth(goalWidth) {
+    if (!this.config) {
+      return FIELD.goalWidth;
+    }
+
+    const normalized = normalizeGoalWidth(goalWidth);
+    this.config.goalWidth = normalized;
+    if (this.currentMatch) {
+      this.currentMatch.setGoalWidth(normalized);
+    }
+    return normalized;
   }
 
   updateMatchDuration(matchMinutes) {
@@ -1557,8 +1587,16 @@ self.onmessage = (event) => {
           if (Object.hasOwn(payload, "useMaxSpeed")) {
             runtime.useMaxSpeed = Boolean(payload.useMaxSpeed);
           }
+          if (Object.hasOwn(payload, "goalWidth")) {
+            payload.goalWidth = normalizeGoalWidth(payload.goalWidth);
+          }
           if (runtime.trainer?.config) {
             Object.assign(runtime.trainer.config, payload);
+            if (Object.hasOwn(payload, "goalWidth")) {
+              runtime.trainer.updateGoalWidth(payload.goalWidth);
+              runtime.currentRenderMatch = captureCurrentMatchState();
+              emitStatus(true);
+            }
             emitSaveData(true);
           }
         }

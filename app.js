@@ -48,6 +48,7 @@ const ui = {
   neuronsPerLayer: document.getElementById("neuronsPerLayer"),
   populationSize: document.getElementById("populationSize"),
   matchMinutes: document.getElementById("matchMinutes"),
+  goalWidth: document.getElementById("goalWidth"),
   speedMultiplier: document.getElementById("speedMultiplier"),
   fitnessGoal: document.getElementById("fitnessGoal"),
   fitnessConceded: document.getElementById("fitnessConceded"),
@@ -374,6 +375,10 @@ function normalizeSpeedMultiplier(value) {
   return clamp(toFiniteNumber(value, 1), 0.25, 100);
 }
 
+function normalizeGoalWidth(value) {
+  return clamp(Math.round(toFiniteNumber(value, FIELD.goalWidth)), 6, 40);
+}
+
 function getBaseStepsForPreset(preset) {
   if (preset === "slow") return SLOW_STEPS;
   if (preset === "ultra") return ULTRA_STEPS;
@@ -499,6 +504,7 @@ function setControlsFromConfig(config) {
   ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 64));
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
+  ui.goalWidth.value = String(normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth));
   ui.showTimeToggle.checked = config.showTimeIndicator !== false;
   state.showTimeIndicator = ui.showTimeToggle.checked;
   ui.showFieldStripesToggle.checked = config.showFieldStripes !== false;
@@ -697,6 +703,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
     ? {
         ...payload.config,
         populationSize: payload.population.length,
+        goalWidth: normalizeGoalWidth(payload.config.goalWidth ?? ui.goalWidth?.value ?? FIELD.goalWidth),
         speedPreset: state.speedPreset,
         speedMultiplier: state.speedMultiplier,
         useMaxSpeed: state.useMaxSpeed,
@@ -921,8 +928,8 @@ class FootballMatch {
     this.score = { A: 0, B: 0 };
     this.players = [];
     this.ballTrail = [];
-    this.goalTop = (FIELD.height - FIELD.goalWidth) / 2;
-    this.goalBottom = this.goalTop + FIELD.goalWidth;
+    this.goalWidth = FIELD.goalWidth;
+    this.setGoalWidth(config.goalWidth);
 
     this.ball = {
       x: FIELD.width / 2,
@@ -944,6 +951,15 @@ class FootballMatch {
     if (this.time >= this.duration) {
       this.finish();
     }
+  }
+
+  setGoalWidth(goalWidth) {
+    this.goalWidth = normalizeGoalWidth(goalWidth);
+    if (this.config) {
+      this.config.goalWidth = this.goalWidth;
+    }
+    this.goalTop = (FIELD.height - this.goalWidth) / 2;
+    this.goalBottom = this.goalTop + this.goalWidth;
   }
 
   addFitness(team, component, amount) {
@@ -1056,8 +1072,8 @@ class FootballMatch {
       ...senseTargets(player, opponents),
       ...senseTargets(player, [this.ball]),
       ...senseBoundaries(player),
-      ...senseTargets(player, [{ x: ownGoalX, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 }]),
-      ...senseTargets(player, [{ x: oppGoalX, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 }]),
+      ...senseTargets(player, [{ x: ownGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
+      ...senseTargets(player, [{ x: oppGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
     ];
   }
 
@@ -1244,6 +1260,7 @@ class EvolutionTrainer {
   start(config, savedData = null) {
     this.config = {
       ...config,
+      goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
     };
     this.bestEver = null;
@@ -1287,6 +1304,7 @@ class EvolutionTrainer {
       ...fallbackConfig,
       ...(savedData.config || {}),
       populationSize: savedData.population.length,
+      goalWidth: normalizeGoalWidth(savedData.config?.goalWidth ?? fallbackConfig.goalWidth ?? FIELD.goalWidth),
       fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
@@ -1345,6 +1363,7 @@ class EvolutionTrainer {
     }
 
     const match = new FootballMatch(this.currentA, this.currentB, this.config, this.onLog);
+    match.setGoalWidth(savedMatch.goalWidth ?? this.config.goalWidth);
     match.time = Number(savedMatch.time) || 0;
     match.duration = Math.max(1, Number(savedMatch.duration) || match.duration);
     match.done = Boolean(savedMatch.done);
@@ -1474,6 +1493,19 @@ class EvolutionTrainer {
     } else {
       this.loadNextMatch();
     }
+  }
+
+  updateGoalWidth(goalWidth) {
+    if (!this.config) {
+      return FIELD.goalWidth;
+    }
+
+    const normalized = normalizeGoalWidth(goalWidth);
+    this.config.goalWidth = normalized;
+    if (this.currentMatch) {
+      this.currentMatch.setGoalWidth(normalized);
+    }
+    return normalized;
   }
 
   updateMatchDuration(matchMinutes) {
@@ -1801,6 +1833,7 @@ function readConfig() {
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 64),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
+    goalWidth: normalizeGoalWidth(ui.goalWidth.value),
     speedPreset: state.speedPreset,
     speedMultiplier: state.speedMultiplier,
     useMaxSpeed: state.useMaxSpeed,
@@ -1810,7 +1843,7 @@ function readConfig() {
   };
 }
 
-function drawField() {
+function drawField(match = null) {
   if (!ctx) return;
   ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
 
@@ -1839,7 +1872,8 @@ function drawField() {
   ctx.arc(ui.canvas.width / 2, ui.canvas.height / 2, 90, 0, Math.PI * 2);
   ctx.stroke();
 
-  const goalHeightPx = FIELD.goalWidth * FIELD.pxPerMeter;
+  const goalWidth = normalizeGoalWidth(match?.goalWidth ?? ui.goalWidth?.value ?? FIELD.goalWidth);
+  const goalHeightPx = goalWidth * FIELD.pxPerMeter;
   const goalTopPx = (ui.canvas.height - goalHeightPx) / 2;
 
   ctx.strokeRect(0, goalTopPx, 70, goalHeightPx);
@@ -1852,7 +1886,7 @@ function drawField() {
 
 function drawMatch(match) {
   if (!ctx) return;
-  drawField();
+  drawField(match);
 
   if (!match) {
     drawCenterText("Ожидание запуска обучения");
@@ -2183,6 +2217,19 @@ ui.matchMinutes.addEventListener("change", () => {
   }
 });
 
+ui.goalWidth.addEventListener("change", () => {
+  const goalWidth = normalizeGoalWidth(ui.goalWidth.value);
+  ui.goalWidth.value = String(goalWidth);
+
+  if (state.workerStatus?.running) {
+    postToWorker("updateConfig", { goalWidth });
+  } else if (state.trainer?.running) {
+    state.trainer.updateGoalWidth(goalWidth);
+  }
+
+  savePopulation();
+  addLog(`Размер ворот установлен: ${goalWidth} м.`);
+});
 ui.skipBtn.addEventListener("click", () => {
   if (!state.workerStatus?.running) {
     addLog("Сейчас нет активного матча для пропуска.");
