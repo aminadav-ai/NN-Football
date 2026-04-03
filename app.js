@@ -696,7 +696,10 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
     : null;
 
   try {
-    applyLoadedPopulationPayload(payload, { persistToLocalStorage: true });
+    localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
+    state.savedPopulationData = payload;
+    state.workerSaveData = payload;
+    updateSaveStatus(payload);
     return true;
   } catch (error) {
     console.error("Не удалось сохранить популяцию:", error);
