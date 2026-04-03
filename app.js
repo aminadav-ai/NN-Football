@@ -75,7 +75,6 @@ const ui = {
   matchInfo: document.getElementById("matchInfo"),
   gamesPerSecond: document.getElementById("gamesPerSecond"),
   bestFitness: document.getElementById("bestFitness"),
-  bestEverFitness: document.getElementById("bestEverFitness"),
   modeInfo: document.getElementById("modeInfo"),
   renderInfo: document.getElementById("renderInfo"),
   saveStatus: document.getElementById("saveStatus"),
@@ -1993,7 +1992,6 @@ function updateStats(frameTime = performance.now()) {
     matchInfo: "—",
     gamesPerSecond: 0,
     bestFitness: 0,
-    bestEverFitness: 0,
     currentMatch: null,
   };
   const renderedMatch = getRenderedMatch(frameTime);
@@ -2003,7 +2001,6 @@ function updateStats(frameTime = performance.now()) {
   ui.matchInfo.textContent = status.matchInfo;
   ui.gamesPerSecond.textContent = formatGamesPerSecond(status.gamesPerSecond);
   ui.bestFitness.textContent = Number(status.bestFitness || 0).toFixed(2);
-  ui.bestEverFitness.textContent = Number(status.bestEverFitness || 0).toFixed(2);
   ui.modeInfo.textContent = state.isPaused ? `${state.mode} · пауза` : state.mode;
   ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
 
