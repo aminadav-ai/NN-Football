@@ -58,6 +58,8 @@
         <div class="buttons">
           <button id="startBtn" class="primary">Новое обучение</button>
           <button id="loadBtn" class="secondary-action" disabled>Загрузить последнее</button>
+          <button id="saveFileBtn" class="secondary-action" disabled>Сохранить в файл</button>
+          <button id="loadFileBtn" class="secondary-action">Загрузить из файла</button>
           <button id="slowBtn">Медленный режим</button>
           <button id="fastBtn">Быстрый режим</button>
           <button id="ultraBtn" class="ultra-btn">Ультра-быстрый</button>
@@ -65,6 +67,7 @@
           <button id="showBtn">Показывать игры</button>
           <button id="hideBtn">Скрывать игры</button>
         </div>
+        <input id="loadFileInput" type="file" accept="application/json,.json" hidden />
         <p id="saveStatus" class="save-status">Сохранение не найдено.</p>
 
         <section class="legend fitness-settings">

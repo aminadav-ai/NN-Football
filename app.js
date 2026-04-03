@@ -54,6 +54,9 @@ const ui = {
   fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
   startBtn: document.getElementById("startBtn"),
   loadBtn: document.getElementById("loadBtn"),
+  saveFileBtn: document.getElementById("saveFileBtn"),
+  loadFileBtn: document.getElementById("loadFileBtn"),
+  loadFileInput: document.getElementById("loadFileInput"),
   slowBtn: document.getElementById("slowBtn"),
   fastBtn: document.getElementById("fastBtn"),
   ultraBtn: document.getElementById("ultraBtn"),
@@ -96,6 +99,7 @@ const state = {
   previousWorkerStatusAt: 0,
   workerSnapshotInterval: 33,
   workerSaveData: null,
+  pendingSaveRequest: null,
   lastFrameTime: null,
   pitchWidth: 550,
   pitchResize: null,
@@ -222,6 +226,13 @@ function handleWorkerMessage(event) {
   if (type === "saveData") {
     state.workerSaveData = payload || null;
     savePopulation(payload);
+
+    if (state.pendingSaveRequest) {
+      const { resolve, timeoutId } = state.pendingSaveRequest;
+      clearTimeout(timeoutId);
+      state.pendingSaveRequest = null;
+      resolve(state.workerSaveData);
+    }
     return;
   }
 
@@ -567,6 +578,7 @@ function serializeMatchState(match, currentA, currentB) {
 
 function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = "") {
   ui.loadBtn.disabled = !savedData;
+  ui.saveFileBtn.disabled = !savedData && !state.workerSaveData?.population?.length && !state.trainer?.population?.length;
   ui.saveStatus.classList.remove("ready", "error");
 
   if (savedData) {
@@ -623,6 +635,37 @@ function buildSavePayloadFromTrainer(trainer) {
   };
 }
 
+function applyLoadedPopulationPayload(payload, options = {}) {
+  if (!payload || !Array.isArray(payload.population) || payload.population.length === 0) {
+    throw new Error("Пустое сохранение.");
+  }
+
+  const persistToLocalStorage = options.persistToLocalStorage !== false;
+
+  payload.pitchWidth = Number.isFinite(payload.pitchWidth) ? payload.pitchWidth : state.pitchWidth;
+  payload.logs = Array.isArray(payload.logs) ? payload.logs.slice(0, MAX_LOG_ENTRIES) : [...logs];
+
+  if (persistToLocalStorage) {
+    localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
+  }
+
+  state.savedPopulationData = payload;
+  state.workerSaveData = payload;
+
+  if (payload.config) {
+    setControlsFromConfig(payload.config);
+  }
+  if (Number.isFinite(payload.pitchWidth)) {
+    state.pitchWidth = payload.pitchWidth;
+    applyPitchWidth();
+  }
+  logs.length = 0;
+  logs.push(...payload.logs);
+  ui.log.textContent = logs.join("\n");
+  updateSaveStatus(payload);
+  return payload;
+}
+
 function savePopulation(source = state.workerSaveData || state.savedPopulationData || state.trainer) {
   let payload = null;
 
@@ -650,10 +693,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
     : null;
 
   try {
-    localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
-    state.savedPopulationData = payload;
-    state.workerSaveData = payload;
-    updateSaveStatus(payload);
+    applyLoadedPopulationPayload(payload, { persistToLocalStorage: true });
     return true;
   } catch (error) {
     console.error("Не удалось сохранить популяцию:", error);
@@ -672,26 +712,7 @@ function loadPopulation() {
 
   try {
     const payload = JSON.parse(raw);
-    if (!payload || !Array.isArray(payload.population) || payload.population.length === 0) {
-      throw new Error("Пустое сохранение.");
-    }
-
-    state.savedPopulationData = payload;
-    state.workerSaveData = payload;
-    if (payload.config) {
-      setControlsFromConfig(payload.config);
-    }
-    if (Number.isFinite(payload.pitchWidth)) {
-      state.pitchWidth = payload.pitchWidth;
-      applyPitchWidth();
-    }
-    if (Array.isArray(payload.logs) && payload.logs.length) {
-      logs.length = 0;
-      logs.push(...payload.logs.slice(0, MAX_LOG_ENTRIES));
-      ui.log.textContent = logs.join("\n");
-    }
-    updateSaveStatus(payload);
-    return payload;
+    return applyLoadedPopulationPayload(payload, { persistToLocalStorage: false });
   } catch (error) {
     console.error("Не удалось загрузить сохранение:", error);
     localStorage.removeItem(POPULATION_STORAGE_KEY);
@@ -699,6 +720,65 @@ function loadPopulation() {
     updateSaveStatus(null, "Сохранение повреждено и было сброшено.");
     return null;
   }
+}
+
+function startTrainingFromSavedData(savedData, sourceLabel = "браузера") {
+  if (!savedData) {
+    return false;
+  }
+
+  ensureWorker();
+  state.trainer = null;
+  state.workerStatus = null;
+  state.previousWorkerStatus = null;
+  state.workerStatusAt = 0;
+  state.previousWorkerStatusAt = 0;
+  state.workerSaveData = savedData;
+  state.isPaused = false;
+  postToWorker("loadSaved", { config: readConfig(), savedData });
+  addLog(`Состояние обучения загружено из ${sourceLabel}.`);
+  return true;
+}
+
+function requestLatestSaveData(timeoutMs = 1500) {
+  if (!state.worker || !state.workerStatus?.running) {
+    savePopulation(state.workerSaveData || state.savedPopulationData || state.trainer);
+    return Promise.resolve(state.savedPopulationData || state.workerSaveData || null);
+  }
+
+  if (state.pendingSaveRequest) {
+    clearTimeout(state.pendingSaveRequest.timeoutId);
+    state.pendingSaveRequest.resolve(state.workerSaveData || state.savedPopulationData || null);
+    state.pendingSaveRequest = null;
+  }
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      state.pendingSaveRequest = null;
+      resolve(state.workerSaveData || state.savedPopulationData || null);
+    }, timeoutMs);
+
+    state.pendingSaveRequest = { resolve, timeoutId };
+    postToWorker("requestSave");
+  });
+}
+
+function exportPopulationToFile(payload) {
+  if (!payload?.population?.length) {
+    return null;
+  }
+
+  const generation = Math.max(0, Math.floor(Number(payload.generation) || 0));
+  const timestamp = new Date(payload.savedAt || Date.now()).toISOString().replace(/[:.]/g, "-");
+  const fileName = `flower-3-generation-${generation}-${timestamp}.json`;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return fileName;
 }
 
 class NeuralNetwork {
@@ -1933,25 +2013,52 @@ ui.startBtn.addEventListener("click", () => {
 });
 
 ui.loadBtn.addEventListener("click", () => {
-  ensureWorker();
   const savedData = loadPopulation();
   if (!savedData) {
     addLog("Сохранение не найдено.");
     return;
   }
 
-  if (savedData.config) {
-    setControlsFromConfig(savedData.config);
+  startTrainingFromSavedData(savedData, "localStorage");
+});
+
+ui.saveFileBtn.addEventListener("click", async () => {
+  const savedData = await requestLatestSaveData();
+  if (!savedData?.population?.length) {
+    addLog("Нет данных обучения для сохранения в файл.");
+    return;
   }
 
-  state.trainer = null;
-  state.workerStatus = null;
-  state.previousWorkerStatus = null;
-  state.workerStatusAt = 0;
-  state.previousWorkerStatusAt = 0;
-  state.workerSaveData = savedData;
-  state.isPaused = false;
-  postToWorker("loadSaved", { config: readConfig(), savedData });
+  savePopulation(savedData);
+  const fileName = exportPopulationToFile(state.savedPopulationData || savedData);
+  if (fileName) {
+    addLog(`Состояние обучения сохранено в файл: ${fileName}.`);
+  }
+});
+
+ui.loadFileBtn.addEventListener("click", () => {
+  ui.loadFileInput.value = "";
+  ui.loadFileInput.click();
+});
+
+ui.loadFileInput.addEventListener("change", async () => {
+  const [file] = ui.loadFileInput.files || [];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const raw = await file.text();
+    const payload = JSON.parse(raw);
+    const savedData = applyLoadedPopulationPayload(payload, { persistToLocalStorage: true });
+    startTrainingFromSavedData(savedData, `файла ${file.name}`);
+  } catch (error) {
+    console.error("Не удалось загрузить файл сохранения:", error);
+    updateSaveStatus(state.savedPopulationData, "Не удалось загрузить файл сохранения.");
+    addLog(`Ошибка загрузки файла: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    ui.loadFileInput.value = "";
+  }
 });
 
 ui.slowBtn.addEventListener("click", () => {
