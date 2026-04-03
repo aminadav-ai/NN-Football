@@ -686,6 +686,9 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
     ? {
         ...payload.config,
         populationSize: payload.population.length,
+        speedPreset: state.speedPreset,
+        speedMultiplier: state.speedMultiplier,
+        useMaxSpeed: state.useMaxSpeed,
         showTimeIndicator: state.showTimeIndicator,
         showFieldStripes: state.showFieldStripes,
         fitnessSettings: normalizeFitnessSettings(payload.config.fitnessSettings),
