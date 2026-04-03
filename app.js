@@ -72,8 +72,6 @@ const ui = {
   bestFitness: document.getElementById("bestFitness"),
   modeInfo: document.getElementById("modeInfo"),
   renderInfo: document.getElementById("renderInfo"),
-  ballSpeedStat: document.getElementById("ballSpeedStat"),
-  ballBorderDistance: document.getElementById("ballBorderDistance"),
   saveStatus: document.getElementById("saveStatus"),
   log: document.getElementById("log"),
 };
@@ -1850,34 +1848,11 @@ function updateStats(frameTime = performance.now()) {
   const renderedMatch = getRenderedMatch(frameTime);
   const diagnosticMatch = renderedMatch || status.currentMatch;
 
-  let ballSpeedText = "—";
-  let borderDistanceText = "—";
-  if (diagnosticMatch?.ball) {
-    const ballRadius = Number(diagnosticMatch.ball.radius) || FIELD.ballRadius;
-    const ballX = Number(diagnosticMatch.ball.x) || 0;
-    const ballY = Number(diagnosticMatch.ball.y) || 0;
-    const ballSpeed = Math.hypot(Number(diagnosticMatch.ball.vx) || 0, Number(diagnosticMatch.ball.vy) || 0);
-    const nearestBorderDistance = Math.max(
-      0,
-      Math.min(
-        ballX - ballRadius,
-        FIELD.width - ballX - ballRadius,
-        ballY - ballRadius,
-        FIELD.height - ballY - ballRadius,
-      ),
-    );
-
-    ballSpeedText = `${ballSpeed.toFixed(2)} м/с`;
-    borderDistanceText = `${nearestBorderDistance.toFixed(2)} м`;
-  }
-
   ui.generation.textContent = String(status.generation);
   ui.matchInfo.textContent = status.matchInfo;
   ui.bestFitness.textContent = status.bestFitness.toFixed(2);
   ui.modeInfo.textContent = state.isPaused ? `${state.mode} · пауза` : state.mode;
   ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
-  ui.ballSpeedStat.textContent = ballSpeedText;
-  ui.ballBorderDistance.textContent = borderDistanceText;
 
   updatePlaybackControls();
   updateMatchFitnessTables(status.currentMatch);
