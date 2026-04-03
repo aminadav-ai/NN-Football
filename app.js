@@ -583,7 +583,16 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   ui.saveStatus.classList.remove("ready", "error");
 
   if (savedData) {
-    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation}`;
+    const savedAtText = Number.isFinite(savedData.savedAt)
+      ? new Date(savedData.savedAt).toLocaleString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "время неизвестно";
+    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation} · ${savedAtText}`;
     ui.saveStatus.classList.add("ready");
     return;
   }
