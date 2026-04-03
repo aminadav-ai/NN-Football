@@ -276,18 +276,22 @@ function ensureWorker() {
 }
 
 function canInterpolateMatchStates(previousMatch, currentMatch) {
-  if (!previousMatch || !currentMatch) {
+  if (!previousMatch || !currentMatch || !previousMatch.ball || !currentMatch.ball) {
     return false;
   }
 
-  const previousA = previousMatch.individualAId ?? previousMatch.individualA?.id ?? null;
-  const previousB = previousMatch.individualBId ?? previousMatch.individualB?.id ?? null;
-  const currentA = currentMatch.individualAId ?? currentMatch.individualA?.id ?? null;
-  const currentB = currentMatch.individualBId ?? currentMatch.individualB?.id ?? null;
+  if (!Array.isArray(previousMatch.players) || !Array.isArray(currentMatch.players)) {
+    return false;
+  }
+
+  const previousA = previousMatch.individualAId ?? null;
+  const previousB = previousMatch.individualBId ?? null;
+  const currentA = currentMatch.individualAId ?? null;
+  const currentB = currentMatch.individualBId ?? null;
 
   return previousA === currentA
     && previousB === currentB
-    && (previousMatch.players?.length || 0) === (currentMatch.players?.length || 0)
+    && previousMatch.players.length === currentMatch.players.length
     && previousMatch.score?.A === currentMatch.score?.A
     && previousMatch.score?.B === currentMatch.score?.B
     && Boolean(previousMatch.done) === Boolean(currentMatch.done);
@@ -324,8 +328,12 @@ function interpolateMatchState(previousMatch, currentMatch, alpha) {
 }
 
 function getRenderedMatch(frameTime = performance.now()) {
+  if (state.useWorkerRenderer || !state.showGames) {
+    return null;
+  }
+
   const currentMatch = state.workerStatus?.currentMatch || null;
-  if (!currentMatch) {
+  if (!currentMatch?.ball || !Array.isArray(currentMatch.players)) {
     return null;
   }
 

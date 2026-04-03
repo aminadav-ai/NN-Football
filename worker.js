@@ -16,6 +16,9 @@ const STEP_DT = 0.08;
 const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
+const STATUS_INTERVAL_FULL_MS = 33;
+const STATUS_INTERVAL_SUMMARY_MS = 120;
+const AUTO_SAVE_INTERVAL_MS = 4000;
 const FITNESS_SETTINGS_DEFAULTS = {
   goalReward: 35,
   concededPenalty: -10,
@@ -138,12 +141,12 @@ function deserializeNetwork(data) {
   );
 }
 
-function serializeMatchState(match, currentA, currentB) {
+function serializeMatchState(match, currentA, currentB, detail = "full") {
   if (!match) {
     return null;
   }
 
-  return {
+  const baseState = {
     individualAId: currentA?.id || null,
     individualBId: currentB?.id || null,
     time: match.time,
@@ -155,6 +158,14 @@ function serializeMatchState(match, currentA, currentB) {
       A: { ...match.fitnessBreakdown.A },
       B: { ...match.fitnessBreakdown.B },
     },
+  };
+
+  if (detail !== "full") {
+    return baseState;
+  }
+
+  return {
+    ...baseState,
     ball: {
       x: match.ball.x,
       y: match.ball.y,
@@ -219,7 +230,7 @@ function createSavePayload() {
 
 function emitSaveData(force = false) {
   const now = performance.now();
-  if (!force && now - runtime.lastSaveAt < 900) {
+  if (!force && now - runtime.lastSaveAt < AUTO_SAVE_INTERVAL_MS) {
     return;
   }
 
@@ -232,6 +243,10 @@ function emitSaveData(force = false) {
   postMessage({ type: "saveData", payload });
 }
 
+function shouldSendFullMatchState() {
+  return !runtime.canvas && runtime.showGames;
+}
+
 function emitStatus(force = false) {
   const trainer = runtime.trainer;
   if (!trainer && !force) {
@@ -239,7 +254,9 @@ function emitStatus(force = false) {
   }
 
   const now = performance.now();
-  if (!force && now - runtime.lastStatusAt < 33) {
+  const sendFullMatchState = shouldSendFullMatchState();
+  const minInterval = sendFullMatchState ? STATUS_INTERVAL_FULL_MS : STATUS_INTERVAL_SUMMARY_MS;
+  if (!force && now - runtime.lastStatusAt < minInterval) {
     return;
   }
 
@@ -252,7 +269,9 @@ function emitStatus(force = false) {
     bestFitness: trainer?.bestFitness || 0,
     running: Boolean(trainer?.running),
     isPaused: runtime.isPaused,
-    currentMatch: trainer?.currentMatch ? serializeMatchState(trainer.currentMatch, trainer.currentA, trainer.currentB) : null,
+    currentMatch: trainer?.currentMatch
+      ? serializeMatchState(trainer.currentMatch, trainer.currentA, trainer.currentB, sendFullMatchState ? "full" : "summary")
+      : null,
   };
 
   runtime.lastStatusAt = now;
