@@ -17,12 +17,9 @@ const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const FITNESS_SETTINGS_DEFAULTS = {
-  ballTouchReward: 1.5,
   goalReward: 35,
   concededPenalty: -10,
   ownGoalPenalty: -25,
-  playerContactPenalty: -0.01,
-  hardCollisionPenalty: -1.5,
 };
 const HARD_COLLISION_THRESHOLD = 1.5;
 const TEAM_COLORS = {
@@ -103,23 +100,17 @@ function toFiniteNumber(value, fallback) {
 
 function normalizeFitnessSettings(settings = {}) {
   return {
-    ballTouchReward: toFiniteNumber(settings.ballTouchReward, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
     goalReward: toFiniteNumber(settings.goalReward, FITNESS_SETTINGS_DEFAULTS.goalReward),
     concededPenalty: toFiniteNumber(settings.concededPenalty, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
     ownGoalPenalty: toFiniteNumber(settings.ownGoalPenalty, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
-    playerContactPenalty: toFiniteNumber(settings.playerContactPenalty, FITNESS_SETTINGS_DEFAULTS.playerContactPenalty),
-    hardCollisionPenalty: toFiniteNumber(settings.hardCollisionPenalty, FITNESS_SETTINGS_DEFAULTS.hardCollisionPenalty),
   };
 }
 
 function createEmptyFitnessBreakdown() {
   return {
-    ballTouch: 0,
     goals: 0,
     conceded: 0,
     ownGoal: 0,
-    playerContact: 0,
-    hardCollision: 0,
   };
 }
 
@@ -860,15 +851,7 @@ class FootballMatch {
       for (let j = i + 1; j < this.players.length; j += 1) {
         const a = this.players[i];
         const b = this.players[j];
-        const { touching, impact, initiator } = resolveElasticCollision(a, b, 0.88);
-
-        if (touching && initiator) {
-          this.addFitness(initiator.team, "playerContact", this.getFitnessSetting("playerContactPenalty"));
-        }
-
-        if (impact > HARD_COLLISION_THRESHOLD && initiator) {
-          this.addFitness(initiator.team, "hardCollision", this.getFitnessSetting("hardCollisionPenalty"));
-        }
+        resolveElasticCollision(a, b, 0.88);
       }
     }
   }
@@ -901,7 +884,6 @@ class FootballMatch {
         const ballPinnedOnBoundary = (nearVerticalEdge || nearHorizontalEdge) && ballSpeed < 0.6;
 
         if (!player.isTouchingBall && !ballPinnedOnBoundary) {
-          this.addFitness(player.team, "ballTouch", this.getFitnessSetting("ballTouchReward"));
           player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
           this.ball.lastTouchAt = this.time;

@@ -18,23 +18,17 @@ const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const FITNESS_SETTINGS_DEFAULTS = {
-  ballTouchReward: 1.5,
   goalReward: 35,
   concededPenalty: -10,
   ownGoalPenalty: -25,
-  playerContactPenalty: -0.01,
-  hardCollisionPenalty: -1.5,
 };
 const HARD_COLLISION_THRESHOLD = 1.5;
 const MAX_LOG_ENTRIES = 1000;
 const POPULATION_STORAGE_KEY = "flower-3.population.v1";
 const FITNESS_BREAKDOWN_ROWS = [
-  { key: "ballTouch", label: "Касание мяча" },
   { key: "goals", label: "Гол сопернику" },
   { key: "conceded", label: "Пропущенный гол" },
   { key: "ownGoal", label: "Автогол" },
-  { key: "playerContact", label: "Касание игрока" },
-  { key: "hardCollision", label: "Сильный толчок" },
   { key: "total", label: "Итого", total: true },
 ];
 
@@ -54,12 +48,9 @@ const ui = {
   populationSize: document.getElementById("populationSize"),
   matchMinutes: document.getElementById("matchMinutes"),
   speedMultiplier: document.getElementById("speedMultiplier"),
-  fitnessBallTouch: document.getElementById("fitnessBallTouch"),
   fitnessGoal: document.getElementById("fitnessGoal"),
   fitnessConceded: document.getElementById("fitnessConceded"),
   fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
-  fitnessPlayerContact: document.getElementById("fitnessPlayerContact"),
-  fitnessHardCollision: document.getElementById("fitnessHardCollision"),
   startBtn: document.getElementById("startBtn"),
   loadBtn: document.getElementById("loadBtn"),
   slowBtn: document.getElementById("slowBtn"),
@@ -413,23 +404,17 @@ function applySpeedState(options = {}) {
 
 function normalizeFitnessSettings(settings = {}) {
   return {
-    ballTouchReward: toFiniteNumber(settings.ballTouchReward, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
     goalReward: toFiniteNumber(settings.goalReward, FITNESS_SETTINGS_DEFAULTS.goalReward),
     concededPenalty: toFiniteNumber(settings.concededPenalty, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
     ownGoalPenalty: toFiniteNumber(settings.ownGoalPenalty, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
-    playerContactPenalty: toFiniteNumber(settings.playerContactPenalty, FITNESS_SETTINGS_DEFAULTS.playerContactPenalty),
-    hardCollisionPenalty: toFiniteNumber(settings.hardCollisionPenalty, FITNESS_SETTINGS_DEFAULTS.hardCollisionPenalty),
   };
 }
 
 function readFitnessSettings() {
   return normalizeFitnessSettings({
-    ballTouchReward: readNumberInput(ui.fitnessBallTouch, FITNESS_SETTINGS_DEFAULTS.ballTouchReward),
     goalReward: readNumberInput(ui.fitnessGoal, FITNESS_SETTINGS_DEFAULTS.goalReward),
     concededPenalty: readNumberInput(ui.fitnessConceded, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
     ownGoalPenalty: readNumberInput(ui.fitnessOwnGoal, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
-    playerContactPenalty: readNumberInput(ui.fitnessPlayerContact, FITNESS_SETTINGS_DEFAULTS.playerContactPenalty),
-    hardCollisionPenalty: readNumberInput(ui.fitnessHardCollision, FITNESS_SETTINGS_DEFAULTS.hardCollisionPenalty),
   });
 }
 
@@ -449,12 +434,9 @@ function applyLiveFitnessSettings() {
 
 function createEmptyFitnessBreakdown() {
   return {
-    ballTouch: 0,
     goals: 0,
     conceded: 0,
     ownGoal: 0,
-    playerContact: 0,
-    hardCollision: 0,
   };
 }
 
@@ -502,12 +484,9 @@ function setControlsFromConfig(config) {
   });
 
   const fitnessSettings = normalizeFitnessSettings(config.fitnessSettings);
-  ui.fitnessBallTouch.value = String(fitnessSettings.ballTouchReward);
   ui.fitnessGoal.value = String(fitnessSettings.goalReward);
   ui.fitnessConceded.value = String(fitnessSettings.concededPenalty);
   ui.fitnessOwnGoal.value = String(fitnessSettings.ownGoalPenalty);
-  ui.fitnessPlayerContact.value = String(fitnessSettings.playerContactPenalty);
-  ui.fitnessHardCollision.value = String(fitnessSettings.hardCollisionPenalty);
 }
 
 function serializeNetwork(network) {
@@ -989,15 +968,7 @@ class FootballMatch {
       for (let j = i + 1; j < this.players.length; j += 1) {
         const a = this.players[i];
         const b = this.players[j];
-        const { touching, impact, initiator } = resolveElasticCollision(a, b, 0.88);
-
-        if (touching && initiator) {
-          this.addFitness(initiator.team, "playerContact", this.getFitnessSetting("playerContactPenalty"));
-        }
-
-        if (impact > HARD_COLLISION_THRESHOLD && initiator) {
-          this.addFitness(initiator.team, "hardCollision", this.getFitnessSetting("hardCollisionPenalty"));
-        }
+        resolveElasticCollision(a, b, 0.88);
       }
     }
   }
@@ -1030,7 +1001,6 @@ class FootballMatch {
         const ballPinnedOnBoundary = (nearVerticalEdge || nearHorizontalEdge) && ballSpeed < 0.6;
 
         if (!player.isTouchingBall && !ballPinnedOnBoundary) {
-          this.addFitness(player.team, "ballTouch", this.getFitnessSetting("ballTouchReward"));
           player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
           this.ball.lastTouchAt = this.time;
@@ -2015,12 +1985,9 @@ ui.sidebarToggle.addEventListener("click", () => {
 });
 
 [
-  ui.fitnessBallTouch,
   ui.fitnessGoal,
   ui.fitnessConceded,
   ui.fitnessOwnGoal,
-  ui.fitnessPlayerContact,
-  ui.fitnessHardCollision,
 ].forEach((input) => {
   input.addEventListener("input", () => {
     applyLiveFitnessSettings();
