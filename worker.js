@@ -19,7 +19,6 @@ const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const MATCH_RATE_WINDOW_MS = 10000;
 const STATUS_INTERVAL_FULL_MS = 33;
 const STATUS_INTERVAL_SUMMARY_MS = 120;
-const AUTO_SAVE_INTERVAL_MS = 4000;
 const FITNESS_SETTINGS_DEFAULTS = {
   goalReward: 35,
   concededPenalty: -10,
@@ -38,7 +37,6 @@ const runtime = {
   loopId: null,
   lastTickAt: null,
   lastStatusAt: 0,
-  lastSaveAt: 0,
   canvas: null,
   ctx: null,
   showGames: true,
@@ -232,17 +230,11 @@ function createSavePayload() {
 }
 
 function emitSaveData(force = false) {
-  const now = performance.now();
-  if (!force && now - runtime.lastSaveAt < AUTO_SAVE_INTERVAL_MS) {
-    return;
-  }
-
   const payload = createSavePayload();
   if (!payload) {
     return;
   }
 
-  runtime.lastSaveAt = now;
   postMessage({ type: "saveData", payload });
 }
 
@@ -568,8 +560,6 @@ function renderFrame(now) {
         safety += 1;
       }
     }
-
-    emitSaveData(false);
   }
 
   const alpha = clamp(runtime.accumulator / STEP_DT, 0, 1);
@@ -1257,7 +1247,6 @@ class EvolutionTrainer {
       this.finishGeneration();
     } else {
       this.loadNextMatch();
-      emitSaveData(true);
     }
   }
 

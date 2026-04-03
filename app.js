@@ -1467,7 +1467,6 @@ class EvolutionTrainer {
       this.finishGeneration();
     } else {
       this.loadNextMatch();
-      savePopulation(this);
     }
   }
 
