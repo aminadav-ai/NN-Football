@@ -144,8 +144,6 @@ function serializeMatchState(match, currentA, currentB) {
   }
 
   return {
-    individualA: currentA ? { id: currentA.id } : null,
-    individualB: currentB ? { id: currentB.id } : null,
     individualAId: currentA?.id || null,
     individualBId: currentB?.id || null,
     time: match.time,
@@ -157,7 +155,14 @@ function serializeMatchState(match, currentA, currentB) {
       A: { ...match.fitnessBreakdown.A },
       B: { ...match.fitnessBreakdown.B },
     },
-    ball: { ...match.ball },
+    ball: {
+      x: match.ball.x,
+      y: match.ball.y,
+      vx: match.ball.vx,
+      vy: match.ball.vy,
+      radius: match.ball.radius,
+      lastTouchTeam: match.ball.lastTouchTeam ?? null,
+    },
     ballTrail: match.ballTrail.map((point) => ({ ...point })),
     players: match.players.map((player) => ({
       team: player.team,
@@ -167,7 +172,6 @@ function serializeMatchState(match, currentA, currentB) {
       vy: player.vy,
       dir: player.dir,
       radius: player.radius,
-      lastTouchAt: player.lastTouchAt,
       isTouchingBall: Boolean(player.isTouchingBall),
     })),
   };
@@ -694,7 +698,6 @@ class FootballMatch {
       vy: 0,
       radius: FIELD.ballRadius,
       lastTouchTeam: null,
-      lastTouchAt: -999,
     };
 
     this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
@@ -747,7 +750,6 @@ class FootballMatch {
         vy: 0,
         dir: team === "A" ? 0 : Math.PI,
         radius: FIELD.playerRadius,
-        lastTouchAt: -999,
         isTouchingBall: false,
       });
     }
@@ -759,7 +761,6 @@ class FootballMatch {
     this.ball.vx = randRange(-0.6, 0.6);
     this.ball.vy = randRange(-0.6, 0.6);
     this.ball.lastTouchTeam = null;
-    this.ball.lastTouchAt = -999;
     this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
   }
 
@@ -884,9 +885,7 @@ class FootballMatch {
         const ballPinnedOnBoundary = (nearVerticalEdge || nearHorizontalEdge) && ballSpeed < 0.6;
 
         if (!player.isTouchingBall && !ballPinnedOnBoundary) {
-          player.lastTouchAt = this.time;
           this.ball.lastTouchTeam = player.team;
-          this.ball.lastTouchAt = this.time;
         }
 
         player.isTouchingBall = true;
@@ -1104,9 +1103,16 @@ class EvolutionTrainer {
       B: { ...createEmptyFitnessBreakdown(), ...(savedMatch.fitnessBreakdown?.B || {}) },
     };
     match.ball = {
-      ...match.ball,
-      ...(savedMatch.ball || {}),
+      x: toFiniteNumber(savedMatch.ball?.x, match.ball.x),
+      y: toFiniteNumber(savedMatch.ball?.y, match.ball.y),
+      vx: toFiniteNumber(savedMatch.ball?.vx, 0),
+      vy: toFiniteNumber(savedMatch.ball?.vy, 0),
       radius: FIELD.ballRadius,
+      lastTouchTeam: savedMatch.ball?.lastTouchTeam === "B"
+        ? "B"
+        : savedMatch.ball?.lastTouchTeam === "A"
+          ? "A"
+          : null,
     };
     match.ballTrail = Array.isArray(savedMatch.ballTrail) && savedMatch.ballTrail.length
       ? savedMatch.ballTrail.map((point) => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }))
@@ -1122,7 +1128,6 @@ class EvolutionTrainer {
         vy: Number(player.vy) || 0,
         dir: Number(player.dir) || 0,
         radius: Number(player.radius) || FIELD.playerRadius,
-        lastTouchAt: Number(player.lastTouchAt) || -999,
         isTouchingBall: Boolean(player.isTouchingBall),
       }));
     }
