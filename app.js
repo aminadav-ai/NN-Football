@@ -583,9 +583,7 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   ui.saveStatus.classList.remove("ready", "error");
 
   if (savedData) {
-    const generationBest = Number(savedData.generationBestFitness ?? savedData.bestFitness) || 0;
-    const bestEverFitness = Number(savedData.bestEverFitness ?? savedData.bestEver?.fitness ?? generationBest) || 0;
-    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation}, лучший в поколении ${generationBest.toFixed(2)}, рекорд ${bestEverFitness.toFixed(2)}`;
+    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation}`;
     ui.saveStatus.classList.add("ready");
     return;
   }
