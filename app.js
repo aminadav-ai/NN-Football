@@ -17,7 +17,7 @@ const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
-const MATCH_RATE_WINDOW_MS = 3000;
+const MATCH_RATE_WINDOW_MS = 10000;
 const FITNESS_SETTINGS_DEFAULTS = {
   goalReward: 35,
   concededPenalty: -10,
