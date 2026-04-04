@@ -386,7 +386,7 @@ function normalizeTournamentGames(value, populationSize = 12) {
   return clamp(Math.round(toFiniteNumber(value, fallback)), 1, MAX_TOURNAMENT_GAMES);
 }
 
-function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
+function ensureTournamentSchedule(schedule, populationSize, minimumGamesPerIndividual) {
   const size = Math.max(0, Math.floor(Number(populationSize) || 0));
   if (size < 2) {
     return [];
@@ -400,8 +400,23 @@ function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
     }
   }
 
-  const schedule = [];
+  const normalizedSchedule = Array.isArray(schedule)
+    ? schedule
+        .filter((pair) => Array.isArray(pair) && pair.length === 2)
+        .map(([indexA, indexB]) => [
+          clamp(Math.floor(Number(indexA) || 0), 0, size - 1),
+          clamp(Math.floor(Number(indexB) || 0), 0, size - 1),
+        ])
+        .filter(([indexA, indexB]) => indexA !== indexB)
+        .map(([indexA, indexB]) => (indexA < indexB ? [indexA, indexB] : [indexB, indexA]))
+    : [];
+
+  const extendedSchedule = [...normalizedSchedule];
   const gamesPerIndividual = new Array(size).fill(0);
+  for (const [indexA, indexB] of extendedSchedule) {
+    gamesPerIndividual[indexA] += 1;
+    gamesPerIndividual[indexB] += 1;
+  }
 
   while (gamesPerIndividual.some((games) => games < targetGames)) {
     let addedInPass = false;
@@ -410,7 +425,7 @@ function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
         continue;
       }
 
-      schedule.push([indexA, indexB]);
+      extendedSchedule.push([indexA, indexB]);
       gamesPerIndividual[indexA] += 1;
       gamesPerIndividual[indexB] += 1;
       addedInPass = true;
@@ -425,7 +440,11 @@ function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
     }
   }
 
-  return schedule;
+  return extendedSchedule;
+}
+
+function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
+  return ensureTournamentSchedule([], populationSize, minimumGamesPerIndividual);
 }
 
 function getBaseStepsForPreset(preset) {
@@ -1396,11 +1415,11 @@ class EvolutionTrainer {
           ])
       : [];
 
-    this.schedule = savedSchedule;
+    this.schedule = ensureTournamentSchedule(savedSchedule, this.population.length, this.config.tournamentGames);
     this.matchCursor = clamp(
       Math.floor(Number(savedData.progress?.matchCursor) || 0),
       0,
-      Math.max(0, savedSchedule.length),
+      Math.max(0, this.schedule.length),
     );
   }
 
@@ -1547,6 +1566,8 @@ class EvolutionTrainer {
 
     const normalized = normalizeTournamentGames(tournamentGames, this.population.length || this.config.populationSize);
     this.config.tournamentGames = normalized;
+    this.schedule = ensureTournamentSchedule(this.schedule, this.population.length, normalized);
+    this.matchCursor = clamp(this.matchCursor, 0, Math.max(0, this.schedule.length));
     return normalized;
   }
 
@@ -2293,7 +2314,7 @@ ui.tournamentGames.addEventListener("change", () => {
 
   if (state.workerStatus?.running) {
     postToWorker("updateConfig", { tournamentGames });
-    addLog(`Минимум игр на особь в турнире: ${tournamentGames}. Применится при формировании следующего поколения.`);
+    addLog(`Минимум игр на особь в турнире: ${tournamentGames}. Расписание текущего поколения будет расширено при необходимости.`);
   } else {
     if (state.trainer?.running) {
       state.trainer.updateTournamentGames(tournamentGames);
