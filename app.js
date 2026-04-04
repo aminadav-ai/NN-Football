@@ -33,6 +33,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
+const APP_ASSET_VERSION = "2026-04-04-2";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -255,7 +256,7 @@ function ensureWorker() {
     return state.worker;
   }
 
-  const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL(`./worker.js?v=${APP_ASSET_VERSION}`, import.meta.url), { type: "module" });
   worker.addEventListener("message", handleWorkerMessage);
   worker.addEventListener("error", (event) => {
     console.error("Не удалось запустить Worker:", event);
