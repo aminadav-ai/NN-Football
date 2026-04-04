@@ -869,7 +869,7 @@ function exportPopulationToFile(payload) {
   const teamSize = clamp(Math.floor(Number(payload.config?.teamSize) || Number(ui.teamSize?.value) || 0), 0, 99);
   const networkShape = `${hiddenLayers}x${neuronsPerLayer}`;
   const timestamp = new Date(payload.savedAt || Date.now()).toISOString().replace(/[:.]/g, "-");
-  const fileName = `nf-${networkShape}-P-${teamSize}-G-${generation}-${timestamp}.json`;
+  const fileName = `nnf-${networkShape}-P-${teamSize}-G-${generation}-${timestamp}.json`;
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
