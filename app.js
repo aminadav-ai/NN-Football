@@ -501,7 +501,7 @@ function setControlsFromConfig(config) {
 
   ui.teamSize.value = String(clamp(Number(config.teamSize) || 4, 1, 8));
   ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 2, 1, 4));
-  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 64));
+  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 500));
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
   ui.goalWidth.value = String(normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth));
@@ -1833,7 +1833,7 @@ function readConfig() {
   return {
     teamSize: clamp(Number(ui.teamSize.value) || 4, 1, 8),
     hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 2, 1, 4),
-    neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 64),
+    neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 500),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
     goalWidth: normalizeGoalWidth(ui.goalWidth.value),
