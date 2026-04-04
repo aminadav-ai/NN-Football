@@ -1051,11 +1051,14 @@ class FootballMatch {
 
   registerGoal(scoringTeam) {
     const concedingTeam = scoringTeam === "A" ? "B" : "A";
+    const isOwnGoal = this.ball.lastTouchTeam === concedingTeam;
     this.score[scoringTeam] += 1;
-    this.addFitness(scoringTeam, "goals", this.getFitnessSetting("goalReward"));
+    if (!isOwnGoal) {
+      this.addFitness(scoringTeam, "goals", this.getFitnessSetting("goalReward"));
+    }
     this.addFitness(concedingTeam, "conceded", this.getFitnessSetting("concededPenalty"));
 
-    if (this.ball.lastTouchTeam === concedingTeam) {
+    if (isOwnGoal) {
       this.addFitness(concedingTeam, "ownGoal", this.getFitnessSetting("ownGoalPenalty"));
     }
 
