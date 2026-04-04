@@ -7,7 +7,7 @@ const FIELD = {
   pxPerMeter: 10,
 };
 
-const INPUT_SIZE = 48;
+const INPUT_SIZE = 49;
 const OUTPUT_SIZE = 2;
 const SENSOR_COUNT = 8;
 const MAX_SIGHT = 130;
@@ -1141,6 +1141,7 @@ class FootballMatch {
     const opponents = this.players.filter((p) => p.team !== player.team);
     const ownGoalX = player.team === "A" ? 0 : FIELD.width;
     const oppGoalX = player.team === "A" ? FIELD.width : 0;
+    const normalizedMatchTime = clamp(this.time / Math.max(this.duration, STEP_DT), 0, 1);
 
     return [
       ...senseTargets(player, teammates),
@@ -1149,6 +1150,7 @@ class FootballMatch {
       ...senseBoundaries(player),
       ...senseTargets(player, [{ x: ownGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
       ...senseTargets(player, [{ x: oppGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
+      normalizedMatchTime,
     ];
   }
 
