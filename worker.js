@@ -965,16 +965,7 @@ class FootballMatch {
 
       if (distance < minDistance) {
         touchingPlayers.add(player);
-        const nx = dx / distance;
-        const ny = dy / distance;
-        const overlap = minDistance - distance;
-
-        this.ball.x += nx * overlap;
-        this.ball.y += ny * overlap;
-
-        const push = Math.max(2, Math.hypot(player.vx, player.vy) * 0.9 + 2.5);
-        this.ball.vx += nx * push + player.vx * 0.35;
-        this.ball.vy += ny * push + player.vy * 0.35;
+        resolveElasticCollision(player, this.ball, 0.9);
 
         const ballSpeed = Math.hypot(this.ball.vx, this.ball.vy);
         const nearVerticalEdge = this.ball.x - this.ball.radius <= 0.75 || this.ball.x + this.ball.radius >= FIELD.width - 0.75;
