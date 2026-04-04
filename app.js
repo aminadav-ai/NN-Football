@@ -18,6 +18,7 @@ const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const MATCH_RATE_WINDOW_MS = 10000;
+const MAX_TOURNAMENT_GAMES = 500;
 const FITNESS_SETTINGS_DEFAULTS = {
   goalReward: 35,
   concededPenalty: -10,
@@ -47,6 +48,7 @@ const ui = {
   hiddenLayers: document.getElementById("hiddenLayers"),
   neuronsPerLayer: document.getElementById("neuronsPerLayer"),
   populationSize: document.getElementById("populationSize"),
+  tournamentGames: document.getElementById("tournamentGames"),
   matchMinutes: document.getElementById("matchMinutes"),
   goalWidth: document.getElementById("goalWidth"),
   speedMultiplier: document.getElementById("speedMultiplier"),
@@ -379,6 +381,53 @@ function normalizeGoalWidth(value) {
   return clamp(Math.round(toFiniteNumber(value, FIELD.goalWidth)), 6, 40);
 }
 
+function normalizeTournamentGames(value, populationSize = 12) {
+  const fallback = clamp(Math.round(toFiniteNumber(populationSize, 12)) - 1, 1, MAX_TOURNAMENT_GAMES);
+  return clamp(Math.round(toFiniteNumber(value, fallback)), 1, MAX_TOURNAMENT_GAMES);
+}
+
+function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
+  const size = Math.max(0, Math.floor(Number(populationSize) || 0));
+  if (size < 2) {
+    return [];
+  }
+
+  const targetGames = normalizeTournamentGames(minimumGamesPerIndividual, size);
+  const allPairs = [];
+  for (let indexA = 0; indexA < size; indexA += 1) {
+    for (let indexB = indexA + 1; indexB < size; indexB += 1) {
+      allPairs.push([indexA, indexB]);
+    }
+  }
+
+  const schedule = [];
+  const gamesPerIndividual = new Array(size).fill(0);
+
+  while (gamesPerIndividual.some((games) => games < targetGames)) {
+    let addedInPass = false;
+    for (const [indexA, indexB] of shuffle(allPairs)) {
+      if (gamesPerIndividual[indexA] >= targetGames && gamesPerIndividual[indexB] >= targetGames) {
+        continue;
+      }
+
+      schedule.push([indexA, indexB]);
+      gamesPerIndividual[indexA] += 1;
+      gamesPerIndividual[indexB] += 1;
+      addedInPass = true;
+
+      if (gamesPerIndividual.every((games) => games >= targetGames)) {
+        break;
+      }
+    }
+
+    if (!addedInPass) {
+      break;
+    }
+  }
+
+  return schedule;
+}
+
 function getBaseStepsForPreset(preset) {
   if (preset === "slow") return SLOW_STEPS;
   if (preset === "ultra") return ULTRA_STEPS;
@@ -503,6 +552,7 @@ function setControlsFromConfig(config) {
   ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 2, 1, 4));
   ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 500));
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
+  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames, config.populationSize));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
   ui.goalWidth.value = String(normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth));
   ui.showTimeToggle.checked = config.showTimeIndicator !== false;
@@ -703,6 +753,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
     ? {
         ...payload.config,
         populationSize: payload.population.length,
+        tournamentGames: normalizeTournamentGames(payload.config.tournamentGames ?? ui.tournamentGames?.value, payload.population.length),
         goalWidth: normalizeGoalWidth(payload.config.goalWidth ?? ui.goalWidth?.value ?? FIELD.goalWidth),
         speedPreset: state.speedPreset,
         speedMultiplier: state.speedMultiplier,
@@ -1264,6 +1315,7 @@ class EvolutionTrainer {
     this.config = {
       ...config,
       goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
+      tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
     };
     this.bestEver = null;
@@ -1308,6 +1360,7 @@ class EvolutionTrainer {
       ...(savedData.config || {}),
       populationSize: savedData.population.length,
       goalWidth: normalizeGoalWidth(savedData.config?.goalWidth ?? fallbackConfig.goalWidth ?? FIELD.goalWidth),
+      tournamentGames: normalizeTournamentGames(savedData.config?.tournamentGames, savedData.population.length),
       fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
@@ -1436,19 +1489,8 @@ class EvolutionTrainer {
       individual.fitness = 0;
     }
 
-    this.schedule = [];
-    const rounds = Math.max(2, Math.ceil(Math.log2(this.population.length)));
-
-    for (let round = 0; round < rounds; round += 1) {
-      const order = shuffle(this.population.map((_, index) => index));
-      for (let i = 0; i < order.length - 1; i += 2) {
-        this.schedule.push([order[i], order[i + 1]]);
-      }
-      if (order.length % 2 === 1) {
-        this.schedule.push([order[order.length - 1], order[0]]);
-      }
-    }
-
+    this.config.tournamentGames = normalizeTournamentGames(this.config?.tournamentGames, this.population.length);
+    this.schedule = buildTournamentSchedule(this.population.length, this.config.tournamentGames);
     this.matchCursor = 0;
     this.loadNextMatch();
   }
@@ -1496,6 +1538,16 @@ class EvolutionTrainer {
     } else {
       this.loadNextMatch();
     }
+  }
+
+  updateTournamentGames(tournamentGames) {
+    if (!this.config) {
+      return 1;
+    }
+
+    const normalized = normalizeTournamentGames(tournamentGames, this.population.length || this.config.populationSize);
+    this.config.tournamentGames = normalized;
+    return normalized;
   }
 
   updateGoalWidth(goalWidth) {
@@ -1835,6 +1887,7 @@ function readConfig() {
     hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 2, 1, 4),
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 500),
     populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
+    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value, ui.populationSize.value),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
     goalWidth: normalizeGoalWidth(ui.goalWidth.value),
     speedPreset: state.speedPreset,
@@ -2233,7 +2286,23 @@ ui.goalWidth.addEventListener("change", () => {
   savePopulation();
   addLog(`Размер ворот установлен: ${goalWidth} м.`);
 });
-ui.skipBtn.addEventListener("click", () => {
+
+ui.tournamentGames.addEventListener("change", () => {
+  const tournamentGames = normalizeTournamentGames(ui.tournamentGames.value, ui.populationSize.value);
+  ui.tournamentGames.value = String(tournamentGames);
+
+  if (state.workerStatus?.running) {
+    postToWorker("updateConfig", { tournamentGames });
+    addLog(`Минимум игр на особь в турнире: ${tournamentGames}. Применится при формировании следующего поколения.`);
+  } else {
+    if (state.trainer?.running) {
+      state.trainer.updateTournamentGames(tournamentGames);
+    }
+    addLog(`Минимум игр на особь в турнире: ${tournamentGames}.`);
+  }
+
+  savePopulation();
+});ui.skipBtn.addEventListener("click", () => {
   if (!state.workerStatus?.running) {
     addLog("Сейчас нет активного матча для пропуска.");
     return;

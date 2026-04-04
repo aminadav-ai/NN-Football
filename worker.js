@@ -17,6 +17,7 @@ const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const MATCH_RATE_WINDOW_MS = 10000;
+const MAX_TOURNAMENT_GAMES = 500;
 const STATUS_INTERVAL_FULL_MS = 33;
 const STATUS_INTERVAL_SUMMARY_MS = 120;
 const FITNESS_SETTINGS_DEFAULTS = {
@@ -102,6 +103,53 @@ function toFiniteNumber(value, fallback) {
 
 function normalizeGoalWidth(value) {
   return clamp(Math.round(toFiniteNumber(value, FIELD.goalWidth)), 6, 40);
+}
+
+function normalizeTournamentGames(value, populationSize = 12) {
+  const fallback = clamp(Math.round(toFiniteNumber(populationSize, 12)) - 1, 1, MAX_TOURNAMENT_GAMES);
+  return clamp(Math.round(toFiniteNumber(value, fallback)), 1, MAX_TOURNAMENT_GAMES);
+}
+
+function buildTournamentSchedule(populationSize, minimumGamesPerIndividual) {
+  const size = Math.max(0, Math.floor(Number(populationSize) || 0));
+  if (size < 2) {
+    return [];
+  }
+
+  const targetGames = normalizeTournamentGames(minimumGamesPerIndividual, size);
+  const allPairs = [];
+  for (let indexA = 0; indexA < size; indexA += 1) {
+    for (let indexB = indexA + 1; indexB < size; indexB += 1) {
+      allPairs.push([indexA, indexB]);
+    }
+  }
+
+  const schedule = [];
+  const gamesPerIndividual = new Array(size).fill(0);
+
+  while (gamesPerIndividual.some((games) => games < targetGames)) {
+    let addedInPass = false;
+    for (const [indexA, indexB] of shuffle(allPairs)) {
+      if (gamesPerIndividual[indexA] >= targetGames && gamesPerIndividual[indexB] >= targetGames) {
+        continue;
+      }
+
+      schedule.push([indexA, indexB]);
+      gamesPerIndividual[indexA] += 1;
+      gamesPerIndividual[indexB] += 1;
+      addedInPass = true;
+
+      if (gamesPerIndividual.every((games) => games >= targetGames)) {
+        break;
+      }
+    }
+
+    if (!addedInPass) {
+      break;
+    }
+  }
+
+  return schedule;
 }
 
 function normalizeFitnessSettings(settings = {}) {
@@ -1038,6 +1086,7 @@ class EvolutionTrainer {
     this.config = {
       ...config,
       goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
+      tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
     };
     this.bestEver = null;
@@ -1082,6 +1131,7 @@ class EvolutionTrainer {
       ...(savedData.config || {}),
       populationSize: savedData.population.length,
       goalWidth: normalizeGoalWidth(savedData.config?.goalWidth ?? fallbackConfig.goalWidth ?? FIELD.goalWidth),
+      tournamentGames: normalizeTournamentGames(savedData.config?.tournamentGames, savedData.population.length),
       fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
@@ -1210,14 +1260,8 @@ class EvolutionTrainer {
       individual.fitness = 0;
     }
 
-    this.schedule = [];
-    for (let indexA = 0; indexA < this.population.length; indexA += 1) {
-      for (let indexB = indexA + 1; indexB < this.population.length; indexB += 1) {
-        this.schedule.push([indexA, indexB]);
-      }
-    }
-
-    this.schedule = shuffle(this.schedule);
+    this.config.tournamentGames = normalizeTournamentGames(this.config?.tournamentGames, this.population.length);
+    this.schedule = buildTournamentSchedule(this.population.length, this.config.tournamentGames);
     this.matchCursor = 0;
     this.loadNextMatch();
   }
@@ -1265,6 +1309,16 @@ class EvolutionTrainer {
     } else {
       this.loadNextMatch();
     }
+  }
+
+  updateTournamentGames(tournamentGames) {
+    if (!this.config) {
+      return 1;
+    }
+
+    const normalized = normalizeTournamentGames(tournamentGames, this.population.length || this.config.populationSize);
+    this.config.tournamentGames = normalized;
+    return normalized;
   }
 
   updateGoalWidth(goalWidth) {
@@ -1590,12 +1644,18 @@ self.onmessage = (event) => {
           if (Object.hasOwn(payload, "goalWidth")) {
             payload.goalWidth = normalizeGoalWidth(payload.goalWidth);
           }
+          if (Object.hasOwn(payload, "tournamentGames")) {
+            payload.tournamentGames = normalizeTournamentGames(payload.tournamentGames, runtime.trainer?.population?.length || runtime.trainer?.config?.populationSize || 12);
+          }
           if (runtime.trainer?.config) {
             Object.assign(runtime.trainer.config, payload);
             if (Object.hasOwn(payload, "goalWidth")) {
               runtime.trainer.updateGoalWidth(payload.goalWidth);
               runtime.currentRenderMatch = captureCurrentMatchState();
               emitStatus(true);
+            }
+            if (Object.hasOwn(payload, "tournamentGames")) {
+              runtime.trainer.updateTournamentGames(payload.tournamentGames);
             }
             emitSaveData(true);
           }
