@@ -283,6 +283,70 @@ button.max-btn {
   gap: 10px;
 }
 
+.network-viz-card {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.network-viz-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.network-viz-header h2 {
+  margin: 0;
+}
+
+.network-viz-status {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.network-viz-canvas {
+  width: 100%;
+  height: 400px;
+  background: linear-gradient(180deg, rgba(10, 23, 34, 0.96), rgba(14, 29, 42, 0.98));
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.network-viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.legend-swatch-base {
+  background: rgba(137, 203, 255, 0.9);
+}
+
+.legend-swatch-recent {
+  background: rgba(255, 108, 108, 0.95);
+}
+
+.legend-swatch-older {
+  background: rgba(255, 172, 172, 0.9);
+}
+
 .overlay-toggle {
   display: flex;
   align-items: center;
@@ -455,5 +519,9 @@ canvas {
     min-width: 0;
     max-width: 320px;
     flex-basis: auto;
+  }
+
+  .network-viz-canvas {
+    height: 320px;
   }
 }

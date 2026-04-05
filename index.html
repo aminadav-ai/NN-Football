@@ -131,6 +131,27 @@
               <span>Показывать полосы на поле</span>
             </label>
           </div>
+
+          <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
+            <div class="network-viz-header">
+              <div>
+                <h2>Эволюция нейросети</h2>
+                <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
+              </div>
+            </div>
+            <canvas
+              id="networkVizCanvas"
+              class="network-viz-canvas"
+              width="1100"
+              height="420"
+              aria-label="Схема нейросети и недавних изменений связей"
+            ></canvas>
+            <div class="network-viz-legend">
+              <span><i class="legend-swatch legend-swatch-base"></i>обычные связи</span>
+              <span><i class="legend-swatch legend-swatch-recent"></i>последнее поколение</span>
+              <span><i class="legend-swatch legend-swatch-older"></i>более старые изменения</span>
+            </div>
+          </section>
         </div>
 
         <section class="fitness-panels" id="fitnessPanels" aria-label="Расшифровка фитнеса по командам">
@@ -163,6 +184,6 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=2026-04-05-2"></script>
+    <script type="module" src="./app.js?v=2026-04-05-3"></script>
   </body>
 </html>

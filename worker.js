@@ -29,6 +29,18 @@ const MUTATION_SETTINGS_DEFAULTS = {
   rate: 0.1,
   amount: 0.28,
 };
+const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
+const NETWORK_VIZ_HISTORY_LIMIT = 10;
+const NETWORK_VIZ_EPSILON = 1e-6;
+const NETWORK_VIZ_INPUT_GROUPS = [
+  { key: "teammates", label: "Свои", size: 8 },
+  { key: "opponents", label: "Чужие", size: 8 },
+  { key: "ball", label: "Мяч", size: 2 },
+  { key: "boundary", label: "Бордюр", size: 8 },
+  { key: "ownGoal", label: "Свои ворота", size: 2 },
+  { key: "oppGoal", label: "Чужие ворота", size: 2 },
+  { key: "time", label: "Время", size: 1 },
+];
 const HARD_COLLISION_THRESHOLD = 1.5;
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -51,6 +63,7 @@ const runtime = {
   accumulator: 0,
   previousRenderMatch: null,
   currentRenderMatch: null,
+  lastNetworkVizVersionSent: null,
 };
 
 const requestWorkerFrame = typeof self.requestAnimationFrame === "function"
@@ -248,6 +261,296 @@ function deserializeNetwork(data) {
   return new NeuralNetwork(expectedLayerSizes, weights, biases);
 }
 
+function serializeNetworkSnapshot(snapshot) {
+  if (!snapshot?.network) {
+    return null;
+  }
+
+  return {
+    generation: Math.max(0, Math.floor(Number(snapshot.generation) || 0)),
+    id: Number(snapshot.id) || 0,
+    fitness: Number(snapshot.fitness) || 0,
+    network: serializeNetwork(snapshot.network),
+  };
+}
+
+function deserializeNetworkSnapshot(snapshot) {
+  if (!snapshot?.network) {
+    return null;
+  }
+
+  return {
+    generation: Math.max(0, Math.floor(Number(snapshot.generation) || 0)),
+    id: Number(snapshot.id) || 0,
+    fitness: Number(snapshot.fitness) || 0,
+    network: deserializeNetwork(snapshot.network),
+  };
+}
+
+function normalizeVisualizationHistory(history = []) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .map((entry) => ({
+      generation: Math.max(0, Math.floor(Number(entry?.generation) || 0)),
+      changedConnections: Array.isArray(entry?.changedConnections)
+        ? entry.changedConnections.filter((key) => typeof key === "string")
+        : [],
+    }))
+    .slice(0, NETWORK_VIZ_HISTORY_LIMIT);
+}
+
+function createConnectionKey(layerIndex, rowIndex, columnIndex) {
+  return `w:${layerIndex}:${rowIndex}:${columnIndex}`;
+}
+
+function getChangedConnectionKeys(previousNetwork, currentNetwork) {
+  if (!previousNetwork?.weights || !currentNetwork?.weights) {
+    return [];
+  }
+
+  const changed = [];
+  const layerCount = Math.min(previousNetwork.weights.length, currentNetwork.weights.length);
+
+  for (let layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
+    const currentLayer = currentNetwork.weights[layerIndex] || [];
+    const previousLayer = previousNetwork.weights[layerIndex] || [];
+
+    for (let rowIndex = 0; rowIndex < currentLayer.length; rowIndex += 1) {
+      const currentRow = currentLayer[rowIndex] || [];
+      const previousRow = previousLayer[rowIndex] || [];
+
+      for (let columnIndex = 0; columnIndex < currentRow.length; columnIndex += 1) {
+        const currentWeight = currentRow[columnIndex];
+        const previousWeight = previousRow[columnIndex];
+        if (!Number.isFinite(currentWeight)) {
+          continue;
+        }
+
+        if (!Number.isFinite(previousWeight) || Math.abs(currentWeight - previousWeight) > NETWORK_VIZ_EPSILON) {
+          changed.push(createConnectionKey(layerIndex, rowIndex, columnIndex));
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+function distributeVisibleCounts(actualCounts, maxTotal = NETWORK_VIZ_MAX_HIDDEN_NODES) {
+  const normalizedCounts = actualCounts.map((count) => Math.max(0, Math.floor(Number(count) || 0)));
+  const total = normalizedCounts.reduce((sum, count) => sum + count, 0);
+
+  if (total <= maxTotal) {
+    return normalizedCounts;
+  }
+
+  const visibleCounts = normalizedCounts.map((count) => {
+    if (count <= 0) {
+      return 0;
+    }
+    return Math.max(1, Math.floor((count / total) * maxTotal));
+  });
+
+  let allocated = visibleCounts.reduce((sum, count) => sum + count, 0);
+
+  while (allocated > maxTotal) {
+    let candidateIndex = -1;
+    let candidateCount = 1;
+    for (let index = 0; index < visibleCounts.length; index += 1) {
+      if (visibleCounts[index] > candidateCount) {
+        candidateCount = visibleCounts[index];
+        candidateIndex = index;
+      }
+    }
+
+    if (candidateIndex === -1) {
+      break;
+    }
+
+    visibleCounts[candidateIndex] -= 1;
+    allocated -= 1;
+  }
+
+  while (allocated < maxTotal) {
+    let candidateIndex = -1;
+    let mostRemaining = 0;
+    for (let index = 0; index < visibleCounts.length; index += 1) {
+      const remaining = normalizedCounts[index] - visibleCounts[index];
+      if (remaining > mostRemaining) {
+        mostRemaining = remaining;
+        candidateIndex = index;
+      }
+    }
+
+    if (candidateIndex === -1 || mostRemaining <= 0) {
+      break;
+    }
+
+    visibleCounts[candidateIndex] += 1;
+    allocated += 1;
+  }
+
+  return visibleCounts.map((count, index) => Math.min(count, normalizedCounts[index]));
+}
+
+function pickVisibleIndices(totalCount, visibleCount) {
+  const total = Math.max(0, Math.floor(Number(totalCount) || 0));
+  const limit = Math.max(0, Math.min(total, Math.floor(Number(visibleCount) || 0)));
+
+  if (limit <= 0) {
+    return [];
+  }
+
+  if (limit >= total) {
+    return Array.from({ length: total }, (_, index) => index);
+  }
+
+  if (limit === 1) {
+    return [Math.floor((total - 1) / 2)];
+  }
+
+  const indices = [];
+  const used = new Set();
+
+  for (let index = 0; index < limit; index += 1) {
+    let candidate = clamp(Math.round((index * (total - 1)) / (limit - 1)), 0, total - 1);
+
+    while (used.has(candidate) && candidate < total - 1) {
+      candidate += 1;
+    }
+    while (used.has(candidate) && candidate > 0) {
+      candidate -= 1;
+    }
+
+    used.add(candidate);
+    indices.push(candidate);
+  }
+
+  return indices.sort((a, b) => a - b);
+}
+
+function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0) {
+  const network = snapshot?.network;
+  if (!network?.layerSizes?.length) {
+    return null;
+  }
+
+  const history = normalizeVisualizationHistory(historyEntries);
+  const ageMap = new Map();
+  history.forEach((entry, age) => {
+    for (const key of entry.changedConnections) {
+      if (!ageMap.has(key)) {
+        ageMap.set(key, age);
+      }
+    }
+  });
+
+  const layerSizes = [...network.layerSizes];
+  const hiddenLayerSizes = layerSizes.slice(1, -1);
+  const hiddenVisibleCounts = distributeVisibleCounts(hiddenLayerSizes, NETWORK_VIZ_MAX_HIDDEN_NODES);
+  const visibleIndicesByLayer = layerSizes.map((size, layerIndex) => {
+    if (layerIndex === 0 || layerIndex === layerSizes.length - 1) {
+      return pickVisibleIndices(size, size);
+    }
+    return pickVisibleIndices(size, hiddenVisibleCounts[layerIndex - 1]);
+  });
+
+  const layers = visibleIndicesByLayer.map((indices, layerIndex) => {
+    if (layerIndex === 0) {
+      let offset = 0;
+      const groups = NETWORK_VIZ_INPUT_GROUPS.map((group) => {
+        const groupStart = offset;
+        const nodes = [];
+        for (let localIndex = 0; localIndex < group.size; localIndex += 1) {
+          const actualIndex = groupStart + localIndex;
+          if (indices.includes(actualIndex)) {
+            nodes.push({
+              id: `${layerIndex}:${actualIndex}`,
+              actualIndex,
+              label: String(localIndex + 1),
+              groupKey: group.key,
+              groupLabel: group.label,
+            });
+          }
+        }
+        offset += group.size;
+        return { ...group, nodes };
+      }).filter((group) => group.nodes.length > 0);
+
+      return {
+        key: "input",
+        label: "Входы",
+        actualCount: layerSizes[layerIndex],
+        shownCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
+        nodes: groups.flatMap((group) => group.nodes),
+        groups,
+      };
+    }
+
+    const isOutputLayer = layerIndex === layerSizes.length - 1;
+    const nodes = indices.map((actualIndex, localIndex) => ({
+      id: `${layerIndex}:${actualIndex}`,
+      actualIndex,
+      label: isOutputLayer
+        ? localIndex === 0
+          ? "Ход"
+          : localIndex === 1
+            ? "Поворот"
+            : `Выход ${localIndex + 1}`
+        : String(actualIndex + 1),
+    }));
+
+    return {
+      key: isOutputLayer ? "output" : `hidden-${layerIndex}`,
+      label: isOutputLayer ? "Выходы" : `Скрытый слой ${layerIndex}`,
+      actualCount: layerSizes[layerIndex],
+      shownCount: nodes.length,
+      nodes,
+    };
+  });
+
+  const connections = [];
+  for (let layerIndex = 0; layerIndex < network.weights.length; layerIndex += 1) {
+    const sourceNodes = layers[layerIndex]?.nodes || [];
+    const targetNodes = layers[layerIndex + 1]?.nodes || [];
+
+    for (const targetNode of targetNodes) {
+      const rowWeights = network.weights[layerIndex]?.[targetNode.actualIndex] || [];
+
+      for (const sourceNode of sourceNodes) {
+        const weight = rowWeights[sourceNode.actualIndex];
+        if (!Number.isFinite(weight)) {
+          continue;
+        }
+
+        const key = createConnectionKey(layerIndex, targetNode.actualIndex, sourceNode.actualIndex);
+        connections.push({
+          from: sourceNode.id,
+          to: targetNode.id,
+          weight,
+          age: ageMap.has(key) ? ageMap.get(key) : null,
+        });
+      }
+    }
+  }
+
+  return {
+    version,
+    generation: Math.max(0, Math.floor(Number(snapshot?.generation) || 0)),
+    bestId: snapshot?.id ?? null,
+    bestFitness: Number(snapshot?.fitness) || 0,
+    layerSizes,
+    hiddenTotalCount: hiddenLayerSizes.reduce((sum, count) => sum + count, 0),
+    hiddenShownCount: hiddenVisibleCounts.reduce((sum, count) => sum + count, 0),
+    historyDepth: history.length,
+    layers,
+    connections,
+  };
+}
+
 function serializeMatchState(match, currentA, currentB, detail = "full") {
   if (!match) {
     return null;
@@ -329,6 +632,7 @@ function createSavePayload() {
           network: serializeNetwork(trainer.bestEver.network),
         }
       : null,
+    visualization: trainer.getVisualizationState(),
     progress: {
       running: trainer.running,
       matchCursor: trainer.matchCursor,
@@ -379,6 +683,12 @@ function emitStatus(force = false) {
       ? serializeMatchState(trainer.currentMatch, trainer.currentA, trainer.currentB, sendFullMatchState ? "full" : "summary")
       : null,
   };
+
+  const networkViz = trainer?.getNetworkVisualizationData?.() || null;
+  if (networkViz && (force || networkViz.version !== runtime.lastNetworkVizVersionSent)) {
+    payload.networkViz = networkViz;
+    runtime.lastNetworkVizVersionSent = networkViz.version;
+  }
 
   runtime.lastStatusAt = now;
   postMessage({ type: "status", payload });
@@ -1112,6 +1422,11 @@ class EvolutionTrainer {
     this.currentA = null;
     this.currentB = null;
     this.completedMatchTimes = [];
+    this.lineageBest = null;
+    this.generationLeader = null;
+    this.lineageHistory = [];
+    this.networkVizVersion = 0;
+    this.cachedNetworkViz = null;
   }
 
   pruneCompletedMatchTimes(now = performance.now()) {
@@ -1133,6 +1448,106 @@ class EvolutionTrainer {
 
     this.pruneCompletedMatchTimes(now);
     return this.completedMatchTimes.length / (MATCH_RATE_WINDOW_MS / 1000);
+  }
+
+  markNetworkVisualizationDirty() {
+    this.networkVizVersion += 1;
+    this.cachedNetworkViz = null;
+  }
+
+  updateGenerationLeader(individual) {
+    if (!individual?.network) {
+      return;
+    }
+
+    const hasNoLeader = !this.generationLeader?.network;
+    const isSameLeader = !hasNoLeader && individual.id === this.generationLeader.id;
+    const shouldPromote = hasNoLeader || individual.fitness > this.generationLeader.fitness + NETWORK_VIZ_EPSILON;
+    const shouldRefresh = isSameLeader && Math.abs((individual.fitness || 0) - (this.generationLeader.fitness || 0)) > NETWORK_VIZ_EPSILON;
+
+    if (shouldPromote || shouldRefresh) {
+      this.generationLeader = {
+        generation: this.generation,
+        id: individual.id,
+        fitness: individual.fitness,
+        network: individual.network.clone(),
+      };
+      this.markNetworkVisualizationDirty();
+    }
+  }
+
+  getDisplayedNetworkSnapshot() {
+    if (this.generationLeader?.network) {
+      return this.generationLeader;
+    }
+    if (this.lineageBest?.network) {
+      return this.lineageBest;
+    }
+    if (this.bestEver?.network) {
+      return {
+        generation: this.generation,
+        id: this.bestEver.id,
+        fitness: this.bestEver.fitness,
+        network: this.bestEver.network.clone(),
+      };
+    }
+    const fallback = this.population?.[0];
+    if (fallback?.network) {
+      return {
+        generation: this.generation,
+        id: fallback.id,
+        fitness: fallback.fitness,
+        network: fallback.network.clone(),
+      };
+    }
+    return null;
+  }
+
+  buildVisualizationHistoryForDisplay() {
+    const history = normalizeVisualizationHistory(this.lineageHistory);
+    const displayed = this.generationLeader?.network;
+    const lineage = this.lineageBest?.network;
+
+    if (displayed && lineage) {
+      const pendingChanges = getChangedConnectionKeys(lineage, displayed);
+      if (pendingChanges.length > 0) {
+        return [
+          { generation: this.generation, changedConnections: pendingChanges },
+          ...history,
+        ].slice(0, NETWORK_VIZ_HISTORY_LIMIT);
+      }
+    }
+
+    return history;
+  }
+
+  restoreVisualizationState(visualization = {}) {
+    this.lineageBest = deserializeNetworkSnapshot(visualization.lineageBest);
+    this.generationLeader = deserializeNetworkSnapshot(visualization.generationLeader);
+    this.lineageHistory = normalizeVisualizationHistory(visualization.history);
+    this.networkVizVersion = 0;
+    this.cachedNetworkViz = null;
+    this.markNetworkVisualizationDirty();
+  }
+
+  getVisualizationState() {
+    return {
+      lineageBest: serializeNetworkSnapshot(this.lineageBest),
+      generationLeader: serializeNetworkSnapshot(this.generationLeader),
+      history: normalizeVisualizationHistory(this.lineageHistory),
+    };
+  }
+
+  getNetworkVisualizationData() {
+    if (!this.cachedNetworkViz) {
+      this.cachedNetworkViz = createNetworkVisualizationData(
+        this.getDisplayedNetworkSnapshot(),
+        this.buildVisualizationHistoryForDisplay(),
+        this.networkVizVersion,
+      );
+    }
+
+    return this.cachedNetworkViz;
   }
 
   start(config, savedData = null) {
@@ -1215,6 +1630,25 @@ class EvolutionTrainer {
           network: deserializeNetwork(savedData.bestEver.network),
         }
       : null;
+
+    this.restoreVisualizationState(savedData.visualization || {});
+    if (!this.lineageBest?.network && this.bestEver?.network) {
+      this.lineageBest = {
+        generation: this.generation,
+        id: this.bestEver.id,
+        fitness: this.bestEver.fitness,
+        network: this.bestEver.network.clone(),
+      };
+    }
+    if (!this.generationLeader?.network && this.lineageBest?.network) {
+      this.generationLeader = {
+        generation: this.generation,
+        id: this.lineageBest.id,
+        fitness: this.lineageBest.fitness,
+        network: this.lineageBest.network.clone(),
+      };
+    }
+    this.markNetworkVisualizationDirty();
 
     const savedSchedule = Array.isArray(savedData.progress?.schedule)
       ? savedData.progress.schedule
@@ -1318,9 +1752,11 @@ class EvolutionTrainer {
       individual.fitness = 0;
     }
 
+    this.generationLeader = null;
     this.config.tournamentGames = normalizeTournamentGames(this.config?.tournamentGames, this.population.length);
     this.schedule = buildTournamentSchedule(this.population.length, this.config.tournamentGames);
     this.matchCursor = 0;
+    this.markNetworkVisualizationDirty();
     this.loadNextMatch();
   }
 
@@ -1358,6 +1794,8 @@ class EvolutionTrainer {
     this.currentA.fitness += this.currentMatch.teamFitness.A;
     this.currentB.fitness += this.currentMatch.teamFitness.B;
 
+    this.updateGenerationLeader(this.currentA);
+    this.updateGenerationLeader(this.currentB);
     this.recordCompletedMatch();
     this.bestFitness = Math.max(this.bestFitness, this.currentA.fitness, this.currentB.fitness);
     this.matchCursor += 1;
@@ -1441,6 +1879,27 @@ class EvolutionTrainer {
   finishGeneration() {
     const ranked = [...this.population].sort((a, b) => b.fitness - a.fitness);
     const leader = ranked[0];
+    const changedConnections = this.lineageBest?.network
+      ? getChangedConnectionKeys(this.lineageBest.network, leader.network)
+      : [];
+
+    this.lineageBest = {
+      generation: this.generation,
+      id: leader.id,
+      fitness: leader.fitness,
+      network: leader.network.clone(),
+    };
+    this.generationLeader = {
+      generation: this.generation,
+      id: leader.id,
+      fitness: leader.fitness,
+      network: leader.network.clone(),
+    };
+    this.lineageHistory = [
+      { generation: this.generation, changedConnections },
+      ...normalizeVisualizationHistory(this.lineageHistory),
+    ].slice(0, NETWORK_VIZ_HISTORY_LIMIT);
+    this.markNetworkVisualizationDirty();
 
     if (!this.bestEver || leader.fitness > this.bestEver.fitness) {
       this.bestEver = {
@@ -1644,6 +2103,7 @@ self.onmessage = (event) => {
         runtime.accumulator = 0;
         runtime.previousRenderMatch = null;
         runtime.currentRenderMatch = null;
+        runtime.lastNetworkVizVersionSent = null;
         runtime.trainer.start(payload.config || {});
         runtime.currentRenderMatch = captureCurrentMatchState();
         runtime.lastTickAt = performance.now();
@@ -1657,6 +2117,7 @@ self.onmessage = (event) => {
         runtime.accumulator = 0;
         runtime.previousRenderMatch = null;
         runtime.currentRenderMatch = null;
+        runtime.lastNetworkVizVersionSent = null;
         runtime.trainer.start(payload.config || {}, payload.savedData || null);
         runtime.currentRenderMatch = captureCurrentMatchState();
         runtime.lastTickAt = performance.now();
