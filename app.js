@@ -24,6 +24,10 @@ const FITNESS_SETTINGS_DEFAULTS = {
   concededPenalty: -10,
   ownGoalPenalty: -25,
 };
+const MUTATION_SETTINGS_DEFAULTS = {
+  rate: 0.1,
+  amount: 0.28,
+};
 const HARD_COLLISION_THRESHOLD = 1.5;
 const MAX_LOG_ENTRIES = 1000;
 const POPULATION_STORAGE_KEY = "flower-3.population.v1";
@@ -33,7 +37,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-1";
+const APP_ASSET_VERSION = "2026-04-05-2";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -53,6 +57,8 @@ const ui = {
   matchMinutes: document.getElementById("matchMinutes"),
   goalWidth: document.getElementById("goalWidth"),
   speedMultiplier: document.getElementById("speedMultiplier"),
+  mutationRate: document.getElementById("mutationRate"),
+  mutationAmount: document.getElementById("mutationAmount"),
   fitnessGoal: document.getElementById("fitnessGoal"),
   fitnessConceded: document.getElementById("fitnessConceded"),
   fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
@@ -503,11 +509,25 @@ function normalizeFitnessSettings(settings = {}) {
   };
 }
 
+function normalizeMutationSettings(settings = {}) {
+  return {
+    rate: clamp(toFiniteNumber(settings.rate, MUTATION_SETTINGS_DEFAULTS.rate), 0, 1),
+    amount: clamp(toFiniteNumber(settings.amount, MUTATION_SETTINGS_DEFAULTS.amount), 0, 2),
+  };
+}
+
 function readFitnessSettings() {
   return normalizeFitnessSettings({
     goalReward: readNumberInput(ui.fitnessGoal, FITNESS_SETTINGS_DEFAULTS.goalReward),
     concededPenalty: readNumberInput(ui.fitnessConceded, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
     ownGoalPenalty: readNumberInput(ui.fitnessOwnGoal, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
+  });
+}
+
+function readMutationSettings() {
+  return normalizeMutationSettings({
+    rate: readNumberInput(ui.mutationRate, MUTATION_SETTINGS_DEFAULTS.rate),
+    amount: readNumberInput(ui.mutationAmount, MUTATION_SETTINGS_DEFAULTS.amount),
   });
 }
 
@@ -523,6 +543,26 @@ function applyLiveFitnessSettings() {
   }
 
   return fitnessSettings;
+}
+
+function applyLiveMutationSettings() {
+  const mutationSettings = readMutationSettings();
+  ui.mutationRate.value = mutationSettings.rate.toFixed(2);
+  ui.mutationAmount.value = mutationSettings.amount.toFixed(2);
+
+  postToWorker("updateConfig", { mutationSettings });
+
+  if (state.trainer?.config) {
+    state.trainer.config.mutationSettings = mutationSettings;
+  }
+
+  const saveSource = state.workerSaveData || state.savedPopulationData;
+  if (saveSource?.config) {
+    saveSource.config.mutationSettings = mutationSettings;
+    savePopulation(saveSource);
+  }
+
+  return mutationSettings;
 }
 
 function createEmptyFitnessBreakdown() {
@@ -591,6 +631,10 @@ function setControlsFromConfig(config) {
   ui.fitnessGoal.value = String(fitnessSettings.goalReward);
   ui.fitnessConceded.value = String(fitnessSettings.concededPenalty);
   ui.fitnessOwnGoal.value = String(fitnessSettings.ownGoalPenalty);
+
+  const mutationSettings = normalizeMutationSettings(config.mutationSettings);
+  ui.mutationRate.value = mutationSettings.rate.toFixed(2);
+  ui.mutationAmount.value = mutationSettings.amount.toFixed(2);
 }
 
 function serializeNetwork(network) {
@@ -725,6 +769,7 @@ function buildSavePayloadFromTrainer(trainer) {
           ...trainer.config,
           populationSize: trainer.population.length,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
+          mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
         }
       : null,
     population: trainer.population.map((individual) => ({
@@ -807,6 +852,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         showTimeIndicator: state.showTimeIndicator,
         showFieldStripes: state.showFieldStripes,
         fitnessSettings: normalizeFitnessSettings(payload.config.fitnessSettings),
+        mutationSettings: normalizeMutationSettings(payload.config.mutationSettings),
       }
     : null;
 
@@ -1360,6 +1406,7 @@ class EvolutionTrainer {
       goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
       tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
+      mutationSettings: normalizeMutationSettings(config.mutationSettings),
     };
     this.bestEver = null;
     this.currentA = null;
@@ -1407,6 +1454,10 @@ class EvolutionTrainer {
       fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
+      }),
+      mutationSettings: normalizeMutationSettings({
+        ...(fallbackConfig.mutationSettings || {}),
+        ...((savedData.config && savedData.config.mutationSettings) || {}),
       }),
     };
 
@@ -1679,10 +1730,14 @@ class EvolutionTrainer {
       });
     }
 
+    const mutationSettings = normalizeMutationSettings(this.config?.mutationSettings);
+
     while (nextGeneration.length < this.population.length) {
       const parentA = this.pickParent(ranked, eliteCount);
       const parentB = this.pickParent(ranked, eliteCount);
-      const child = parentA.network.crossover(parentB.network).mutate(0.1, 0.28);
+      const child = parentA.network
+        .crossover(parentB.network)
+        .mutate(mutationSettings.rate, mutationSettings.amount);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
@@ -1957,6 +2012,7 @@ function readConfig() {
     showTimeIndicator: ui.showTimeToggle.checked,
     showFieldStripes: ui.showFieldStripesToggle.checked,
     fitnessSettings: readFitnessSettings(),
+    mutationSettings: readMutationSettings(),
   };
 }
 
@@ -2294,6 +2350,16 @@ ui.sidebarToggle.addEventListener("click", () => {
 ].forEach((input) => {
   input.addEventListener("input", () => {
     applyLiveFitnessSettings();
+  });
+});
+
+[
+  ui.mutationRate,
+  ui.mutationAmount,
+].forEach((input) => {
+  input.addEventListener("change", () => {
+    const mutationSettings = applyLiveMutationSettings();
+    addLog(`Параметры мутации обновлены: вероятность ${mutationSettings.rate.toFixed(2)}, диапазон шума ${mutationSettings.amount.toFixed(2)}.`);
   });
 });
 

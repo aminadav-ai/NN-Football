@@ -25,6 +25,10 @@ const FITNESS_SETTINGS_DEFAULTS = {
   concededPenalty: -10,
   ownGoalPenalty: -25,
 };
+const MUTATION_SETTINGS_DEFAULTS = {
+  rate: 0.1,
+  amount: 0.28,
+};
 const HARD_COLLISION_THRESHOLD = 1.5;
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -179,6 +183,13 @@ function normalizeFitnessSettings(settings = {}) {
   };
 }
 
+function normalizeMutationSettings(settings = {}) {
+  return {
+    rate: clamp(toFiniteNumber(settings.rate, MUTATION_SETTINGS_DEFAULTS.rate), 0, 1),
+    amount: clamp(toFiniteNumber(settings.amount, MUTATION_SETTINGS_DEFAULTS.amount), 0, 2),
+  };
+}
+
 function createEmptyFitnessBreakdown() {
   return {
     goals: 0,
@@ -303,6 +314,7 @@ function createSavePayload() {
           ...trainer.config,
           populationSize: trainer.population.length,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
+          mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
         }
       : null,
     population: trainer.population.map((individual) => ({
@@ -1129,6 +1141,7 @@ class EvolutionTrainer {
       goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
       tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
+      mutationSettings: normalizeMutationSettings(config.mutationSettings),
     };
     this.bestEver = null;
     this.currentA = null;
@@ -1176,6 +1189,10 @@ class EvolutionTrainer {
       fitnessSettings: normalizeFitnessSettings({
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
+      }),
+      mutationSettings: normalizeMutationSettings({
+        ...(fallbackConfig.mutationSettings || {}),
+        ...((savedData.config && savedData.config.mutationSettings) || {}),
       }),
     };
 
@@ -1444,10 +1461,14 @@ class EvolutionTrainer {
       });
     }
 
+    const mutationSettings = normalizeMutationSettings(this.config?.mutationSettings);
+
     while (nextGeneration.length < this.population.length) {
       const parentA = this.pickParent(ranked, eliteCount);
       const parentB = this.pickParent(ranked, eliteCount);
-      const child = parentA.network.crossover(parentB.network).mutate(0.1, 0.28);
+      const child = parentA.network
+        .crossover(parentB.network)
+        .mutate(mutationSettings.rate, mutationSettings.amount);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
@@ -1705,6 +1726,9 @@ self.onmessage = (event) => {
           }
           if (Object.hasOwn(payload, "tournamentGames")) {
             payload.tournamentGames = normalizeTournamentGames(payload.tournamentGames, runtime.trainer?.population?.length || runtime.trainer?.config?.populationSize || 12);
+          }
+          if (Object.hasOwn(payload, "mutationSettings")) {
+            payload.mutationSettings = normalizeMutationSettings(payload.mutationSettings);
           }
           if (runtime.trainer?.config) {
             Object.assign(runtime.trainer.config, payload);
