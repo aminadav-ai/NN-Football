@@ -1478,16 +1478,15 @@ class EvolutionTrainer {
         fitness: individual.fitness,
         network: individual.network.clone(),
       };
-      this.markNetworkVisualizationDirty();
     }
   }
 
   getDisplayedNetworkSnapshot() {
-    if (this.generationLeader?.network) {
-      return this.generationLeader;
-    }
     if (this.lineageBest?.network) {
       return this.lineageBest;
+    }
+    if (this.generationLeader?.network) {
+      return this.generationLeader;
     }
     if (this.bestEver?.network) {
       return {
@@ -1510,21 +1509,7 @@ class EvolutionTrainer {
   }
 
   buildVisualizationHistoryForDisplay() {
-    const history = normalizeVisualizationHistory(this.lineageHistory);
-    const displayed = this.generationLeader?.network;
-    const lineage = this.lineageBest?.network;
-
-    if (displayed && lineage) {
-      const pendingChanges = getChangedConnectionKeys(lineage, displayed);
-      if (pendingChanges.length > 0) {
-        return [
-          { generation: this.generation, changedConnections: pendingChanges },
-          ...history,
-        ].slice(0, NETWORK_VIZ_HISTORY_LIMIT);
-      }
-    }
-
-    return history;
+    return normalizeVisualizationHistory(this.lineageHistory);
   }
 
   restoreVisualizationState(visualization = {}) {
