@@ -24,6 +24,7 @@ const FITNESS_SETTINGS_DEFAULTS = {
   concededPenalty: -10,
   ownGoalPenalty: -25,
 };
+const CROSSOVER_RATE_DEFAULT = 1;
 const MUTATION_SETTINGS_DEFAULTS = {
   rate: 0.1,
   amount: 0.28,
@@ -49,7 +50,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-4";
+const APP_ASSET_VERSION = "2026-04-05-5";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -72,6 +73,7 @@ const ui = {
   matchMinutes: document.getElementById("matchMinutes"),
   goalWidth: document.getElementById("goalWidth"),
   speedMultiplier: document.getElementById("speedMultiplier"),
+  crossoverRate: document.getElementById("crossoverRate"),
   mutationRate: document.getElementById("mutationRate"),
   mutationAmount: document.getElementById("mutationAmount"),
   networkVizHistoryDepth: document.getElementById("networkVizHistoryDepth"),
@@ -536,6 +538,10 @@ function normalizeFitnessSettings(settings = {}) {
   };
 }
 
+function normalizeCrossoverRate(value) {
+  return clamp(toFiniteNumber(value, CROSSOVER_RATE_DEFAULT), 0, 1);
+}
+
 function normalizeMutationSettings(settings = {}) {
   return {
     rate: clamp(toFiniteNumber(settings.rate, MUTATION_SETTINGS_DEFAULTS.rate), 0, 1),
@@ -574,6 +580,27 @@ function applyLiveFitnessSettings() {
   }
 
   return fitnessSettings;
+}
+
+function applyLiveCrossoverSettings() {
+  const crossoverRate = normalizeCrossoverRate(ui.crossoverRate?.value);
+  if (ui.crossoverRate) {
+    ui.crossoverRate.value = crossoverRate.toFixed(2);
+  }
+
+  postToWorker("updateConfig", { crossoverRate });
+
+  if (state.trainer?.config) {
+    state.trainer.config.crossoverRate = crossoverRate;
+  }
+
+  const saveSource = state.workerSaveData || state.savedPopulationData;
+  if (saveSource?.config) {
+    saveSource.config.crossoverRate = crossoverRate;
+    savePopulation(saveSource);
+  }
+
+  return crossoverRate;
 }
 
 function applyLiveMutationSettings() {
@@ -697,6 +724,10 @@ function setControlsFromConfig(config) {
   ui.fitnessGoal.value = String(fitnessSettings.goalReward);
   ui.fitnessConceded.value = String(fitnessSettings.concededPenalty);
   ui.fitnessOwnGoal.value = String(fitnessSettings.ownGoalPenalty);
+
+  if (ui.crossoverRate) {
+    ui.crossoverRate.value = normalizeCrossoverRate(config.crossoverRate).toFixed(2);
+  }
 
   const mutationSettings = normalizeMutationSettings(config.mutationSettings);
   ui.mutationRate.value = mutationSettings.rate.toFixed(2);
@@ -1132,6 +1163,7 @@ function buildSavePayloadFromTrainer(trainer) {
           ...trainer.config,
           populationSize: trainer.population.length,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
+          crossoverRate: normalizeCrossoverRate(trainer.config.crossoverRate),
           mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
           networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
         }
@@ -1236,6 +1268,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         showTimeIndicator: state.showTimeIndicator,
         showFieldStripes: state.showFieldStripes,
         fitnessSettings: normalizeFitnessSettings(payload.config.fitnessSettings),
+        crossoverRate: normalizeCrossoverRate(payload.config.crossoverRate),
         mutationSettings: normalizeMutationSettings(payload.config.mutationSettings),
         networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
       }
@@ -1882,6 +1915,7 @@ class EvolutionTrainer {
       goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
       tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
+      crossoverRate: normalizeCrossoverRate(config.crossoverRate),
       mutationSettings: normalizeMutationSettings(config.mutationSettings),
       networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(config.networkVizHistoryDepth),
     };
@@ -1932,6 +1966,7 @@ class EvolutionTrainer {
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
       }),
+      crossoverRate: normalizeCrossoverRate(savedData.config?.crossoverRate ?? fallbackConfig.crossoverRate),
       mutationSettings: normalizeMutationSettings({
         ...(fallbackConfig.mutationSettings || {}),
         ...((savedData.config && savedData.config.mutationSettings) || {}),
@@ -2266,13 +2301,14 @@ class EvolutionTrainer {
     }
 
     const mutationSettings = normalizeMutationSettings(this.config?.mutationSettings);
+    const crossoverRate = normalizeCrossoverRate(this.config?.crossoverRate);
 
     while (nextGeneration.length < this.population.length) {
       const parentA = this.pickParent(ranked, eliteCount);
-      const parentB = this.pickParent(ranked, eliteCount);
-      const child = parentA.network
-        .crossover(parentB.network)
-        .mutate(mutationSettings.rate, mutationSettings.amount);
+      const baseNetwork = crossoverRate > 0 && random() < crossoverRate
+        ? parentA.network.crossover(this.pickParent(ranked, eliteCount).network)
+        : parentA.network.clone();
+      const child = baseNetwork.mutate(mutationSettings.rate, mutationSettings.amount);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
@@ -2553,6 +2589,7 @@ function readConfig() {
     showTimeIndicator: ui.showTimeToggle.checked,
     showFieldStripes: ui.showFieldStripesToggle.checked,
     fitnessSettings: readFitnessSettings(),
+    crossoverRate: normalizeCrossoverRate(ui.crossoverRate?.value),
     mutationSettings: readMutationSettings(),
     networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth?.value),
   };
@@ -3128,6 +3165,15 @@ ui.sidebarToggle.addEventListener("click", () => {
   input.addEventListener("input", () => {
     applyLiveFitnessSettings();
   });
+});
+
+ui.crossoverRate?.addEventListener("change", () => {
+  const crossoverRate = applyLiveCrossoverSettings();
+  addLog(
+    crossoverRate <= 0
+      ? "Кроссовер отключён: новые особи будут появляться только через мутацию выбранного родителя."
+      : `Вероятность кроссовера обновлена: ${crossoverRate.toFixed(2)}.`,
+  );
 });
 
 [

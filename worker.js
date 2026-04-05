@@ -25,6 +25,7 @@ const FITNESS_SETTINGS_DEFAULTS = {
   concededPenalty: -10,
   ownGoalPenalty: -25,
 };
+const CROSSOVER_RATE_DEFAULT = 1;
 const MUTATION_SETTINGS_DEFAULTS = {
   rate: 0.1,
   amount: 0.28,
@@ -194,6 +195,10 @@ function normalizeFitnessSettings(settings = {}) {
     concededPenalty: toFiniteNumber(settings.concededPenalty, FITNESS_SETTINGS_DEFAULTS.concededPenalty),
     ownGoalPenalty: toFiniteNumber(settings.ownGoalPenalty, FITNESS_SETTINGS_DEFAULTS.ownGoalPenalty),
   };
+}
+
+function normalizeCrossoverRate(value) {
+  return clamp(toFiniteNumber(value, CROSSOVER_RATE_DEFAULT), 0, 1);
 }
 
 function normalizeMutationSettings(settings = {}) {
@@ -622,6 +627,7 @@ function createSavePayload() {
           ...trainer.config,
           populationSize: trainer.population.length,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
+          crossoverRate: normalizeCrossoverRate(trainer.config.crossoverRate),
           mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
           networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
         }
@@ -1548,6 +1554,7 @@ class EvolutionTrainer {
       goalWidth: normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth),
       tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
+      crossoverRate: normalizeCrossoverRate(config.crossoverRate),
       mutationSettings: normalizeMutationSettings(config.mutationSettings),
       networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(config.networkVizHistoryDepth),
     };
@@ -1598,6 +1605,7 @@ class EvolutionTrainer {
         ...(fallbackConfig.fitnessSettings || {}),
         ...((savedData.config && savedData.config.fitnessSettings) || {}),
       }),
+      crossoverRate: normalizeCrossoverRate(savedData.config?.crossoverRate ?? fallbackConfig.crossoverRate),
       mutationSettings: normalizeMutationSettings({
         ...(fallbackConfig.mutationSettings || {}),
         ...((savedData.config && savedData.config.mutationSettings) || {}),
@@ -1928,13 +1936,14 @@ class EvolutionTrainer {
     }
 
     const mutationSettings = normalizeMutationSettings(this.config?.mutationSettings);
+    const crossoverRate = normalizeCrossoverRate(this.config?.crossoverRate);
 
     while (nextGeneration.length < this.population.length) {
       const parentA = this.pickParent(ranked, eliteCount);
-      const parentB = this.pickParent(ranked, eliteCount);
-      const child = parentA.network
-        .crossover(parentB.network)
-        .mutate(mutationSettings.rate, mutationSettings.amount);
+      const baseNetwork = crossoverRate > 0 && random() < crossoverRate
+        ? parentA.network.crossover(this.pickParent(ranked, eliteCount).network)
+        : parentA.network.clone();
+      const child = baseNetwork.mutate(mutationSettings.rate, mutationSettings.amount);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
@@ -2194,6 +2203,9 @@ self.onmessage = (event) => {
           }
           if (Object.hasOwn(payload, "tournamentGames")) {
             payload.tournamentGames = normalizeTournamentGames(payload.tournamentGames, runtime.trainer?.population?.length || runtime.trainer?.config?.populationSize || 12);
+          }
+          if (Object.hasOwn(payload, "crossoverRate")) {
+            payload.crossoverRate = normalizeCrossoverRate(payload.crossoverRate);
           }
           if (Object.hasOwn(payload, "mutationSettings")) {
             payload.mutationSettings = normalizeMutationSettings(payload.mutationSettings);
