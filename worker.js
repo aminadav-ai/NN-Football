@@ -31,7 +31,7 @@ const MUTATION_SETTINGS_DEFAULTS = {
   amount: 0.28,
 };
 const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
-const NETWORK_VIZ_HISTORY_LIMIT = 10;
+const NETWORK_VIZ_HISTORY_LIMIT = 30;
 const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_INPUT_GROUPS = [
   { key: "teammates", label: "Свои", size: 8 },
@@ -210,6 +210,10 @@ function normalizeMutationSettings(settings = {}) {
 
 function normalizeNetworkVizHistoryDepth(value) {
   return clamp(Math.round(toFiniteNumber(value, NETWORK_VIZ_HISTORY_LIMIT)), 1, NETWORK_VIZ_HISTORY_LIMIT);
+}
+
+function normalizeNetworkVizHistoryOffset(value, maxOffset = NETWORK_VIZ_HISTORY_LIMIT - 1) {
+  return clamp(Math.round(toFiniteNumber(value, 0)), 0, Math.max(0, Math.floor(maxOffset)));
 }
 
 function createEmptyFitnessBreakdown() {
@@ -441,22 +445,16 @@ function pickVisibleIndices(totalCount, visibleCount) {
   return indices.sort((a, b) => a - b);
 }
 
-function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0, historyDepth = NETWORK_VIZ_HISTORY_LIMIT) {
+function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0, selectedHistoryIndex = 0) {
   const network = snapshot?.network;
   if (!network?.layerSizes?.length) {
     return null;
   }
 
-  const effectiveHistoryDepth = normalizeNetworkVizHistoryDepth(historyDepth);
-  const history = normalizeVisualizationHistory(historyEntries);
-  const ageMap = new Map();
-  history.forEach((entry, age) => {
-    for (const key of entry.changedConnections) {
-      if (!ageMap.has(key)) {
-        ageMap.set(key, age);
-      }
-    }
-  });
+  const history = normalizeVisualizationHistory(historyEntries).slice(0, NETWORK_VIZ_HISTORY_LIMIT);
+  const activeHistoryIndex = normalizeNetworkVizHistoryOffset(selectedHistoryIndex, Math.max(0, history.length - 1));
+  const activeHistoryEntry = history[activeHistoryIndex] || null;
+  const activeConnections = new Set(activeHistoryEntry?.changedConnections || []);
 
   const layerSizes = [...network.layerSizes];
   const hiddenLayerSizes = layerSizes.slice(1, -1);
@@ -538,10 +536,11 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
         const key = createConnectionKey(layerIndex, targetNode.actualIndex, sourceNode.actualIndex);
         connections.push({
+          key,
           from: sourceNode.id,
           to: targetNode.id,
           weight,
-          age: ageMap.has(key) ? ageMap.get(key) : null,
+          highlighted: activeConnections.has(key),
         });
       }
     }
@@ -555,7 +554,11 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     layerSizes,
     hiddenTotalCount: hiddenLayerSizes.reduce((sum, count) => sum + count, 0),
     hiddenShownCount: hiddenVisibleCounts.reduce((sum, count) => sum + count, 0),
-    historyDepth: effectiveHistoryDepth,
+    availableHistory: history.length,
+    activeHistoryIndex,
+    activeHistoryGeneration: activeHistoryEntry?.generation ?? null,
+    activeChangedCount: activeHistoryEntry?.changedConnections?.length || 0,
+    historyEntries: history,
     layers,
     connections,
   };
@@ -1439,6 +1442,7 @@ class EvolutionTrainer {
     this.lineageHistory = [];
     this.networkVizVersion = 0;
     this.cachedNetworkViz = null;
+    this.networkVizHistoryOffset = 0;
   }
 
   pruneCompletedMatchTimes(now = performance.now()) {
@@ -1522,6 +1526,7 @@ class EvolutionTrainer {
     this.lineageBest = deserializeNetworkSnapshot(visualization.lineageBest);
     this.generationLeader = deserializeNetworkSnapshot(visualization.generationLeader);
     this.lineageHistory = normalizeVisualizationHistory(visualization.history);
+    this.networkVizHistoryOffset = 0;
     this.networkVizVersion = 0;
     this.cachedNetworkViz = null;
     this.markNetworkVisualizationDirty();
@@ -1541,7 +1546,7 @@ class EvolutionTrainer {
         this.getDisplayedNetworkSnapshot(),
         this.buildVisualizationHistoryForDisplay(),
         this.networkVizVersion,
-        this.config?.networkVizHistoryDepth,
+        this.networkVizHistoryOffset,
       );
     }
 
@@ -1845,6 +1850,12 @@ class EvolutionTrainer {
     this.config.networkVizHistoryDepth = normalized;
     this.markNetworkVisualizationDirty();
     return normalized;
+  }
+
+  updateNetworkVizHistoryOffset(offset) {
+    this.networkVizHistoryOffset = normalizeNetworkVizHistoryOffset(offset, Math.max(0, this.lineageHistory.length - 1));
+    this.markNetworkVisualizationDirty();
+    return this.networkVizHistoryOffset;
   }
 
   updateMatchDuration(matchMinutes) {
@@ -2213,6 +2224,9 @@ self.onmessage = (event) => {
           if (Object.hasOwn(payload, "networkVizHistoryDepth")) {
             payload.networkVizHistoryDepth = normalizeNetworkVizHistoryDepth(payload.networkVizHistoryDepth);
           }
+          if (Object.hasOwn(payload, "networkVizHistoryOffset")) {
+            payload.networkVizHistoryOffset = normalizeNetworkVizHistoryOffset(payload.networkVizHistoryOffset, Math.max(0, (runtime.trainer?.lineageHistory?.length || 1) - 1));
+          }
           if (runtime.trainer?.config) {
             Object.assign(runtime.trainer.config, payload);
             if (Object.hasOwn(payload, "goalWidth")) {
@@ -2227,6 +2241,10 @@ self.onmessage = (event) => {
             }
             if (Object.hasOwn(payload, "networkVizHistoryDepth")) {
               runtime.trainer.updateNetworkVizHistoryDepth(payload.networkVizHistoryDepth);
+              emitStatus(true);
+            }
+            if (Object.hasOwn(payload, "networkVizHistoryOffset")) {
+              runtime.trainer.updateNetworkVizHistoryOffset(payload.networkVizHistoryOffset);
               emitStatus(true);
             }
             emitSaveData(true);

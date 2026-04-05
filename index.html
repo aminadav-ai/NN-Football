@@ -79,10 +79,6 @@
             <input id="mutationAmount" type="number" min="0" max="2" step="0.01" value="0.28" />
           </label>
 
-          <label>
-            Поколений подсветки
-            <input id="networkVizHistoryDepth" type="number" min="1" max="10" step="1" value="10" />
-          </label>
         </div>
 
         <div class="buttons">
@@ -148,6 +144,11 @@
                 <h2>Эволюция нейросети</h2>
                 <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
               </div>
+              <div class="network-viz-nav" aria-label="Просмотр истории изменений">
+                <button id="networkVizOlderBtn" class="network-viz-nav-btn" type="button" title="Показать более старое изменение" aria-label="Показать более старое изменение">▲</button>
+                <button id="networkVizNewerBtn" class="network-viz-nav-btn" type="button" title="Показать более новое изменение" aria-label="Показать более новое изменение">▼</button>
+                <div id="networkVizStepInfo" class="network-viz-step">0/0</div>
+              </div>
             </div>
             <canvas
               id="networkVizCanvas"
@@ -158,8 +159,7 @@
             ></canvas>
             <div class="network-viz-legend">
               <span><i class="legend-swatch legend-swatch-base"></i>обычные связи</span>
-              <span><i class="legend-swatch legend-swatch-recent"></i>последнее поколение</span>
-              <span><i class="legend-swatch legend-swatch-older"></i>более старые изменения</span>
+              <span><i class="legend-swatch legend-swatch-recent"></i>выбранное изменение</span>
             </div>
           </section>
         </div>
@@ -194,6 +194,6 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=2026-04-05-5"></script>
+    <script type="module" src="./app.js?v=2026-04-05-6"></script>
   </body>
 </html>

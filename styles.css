@@ -303,6 +303,36 @@ button.max-btn {
   margin: 0;
 }
 
+.network-viz-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.network-viz-nav-btn {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  background: rgba(38, 64, 88, 0.95);
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.network-viz-nav-btn:disabled {
+  opacity: 0.4;
+}
+
+.network-viz-step {
+  min-width: 48px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-align: center;
+}
+
 .network-viz-status {
   margin: 4px 0 0;
   color: var(--muted);
