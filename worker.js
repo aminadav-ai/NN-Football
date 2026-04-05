@@ -20,6 +20,7 @@ const MATCH_RATE_WINDOW_MS = 10000;
 const MAX_TOURNAMENT_GAMES = 500;
 const STATUS_INTERVAL_FULL_MS = 33;
 const STATUS_INTERVAL_SUMMARY_MS = 120;
+const SAVE_DATA_INTERVAL_MS = 2500;
 const FITNESS_SETTINGS_DEFAULTS = {
   goalReward: 1,
   concededPenalty: 0,
@@ -66,6 +67,7 @@ const runtime = {
   previousRenderMatch: null,
   currentRenderMatch: null,
   lastNetworkVizVersionSent: null,
+  lastSaveDataAt: 0,
 };
 
 const requestWorkerFrame = typeof self.requestAnimationFrame === "function"
@@ -772,11 +774,17 @@ function createSavePayload() {
 }
 
 function emitSaveData(force = false) {
+  const now = performance.now();
+  if (!force && now - runtime.lastSaveDataAt < SAVE_DATA_INTERVAL_MS) {
+    return;
+  }
+
   const payload = createSavePayload();
   if (!payload) {
     return;
   }
 
+  runtime.lastSaveDataAt = now;
   postMessage({ type: "saveData", payload });
 }
 
@@ -2125,7 +2133,7 @@ class EvolutionTrainer {
     this.population = nextGeneration;
     this.generation += 1;
     this.prepareGeneration();
-    emitSaveData(true);
+    emitSaveData(false);
   }
 
   pickParent(ranked, eliteCount) {

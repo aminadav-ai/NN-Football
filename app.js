@@ -50,7 +50,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-10";
+const APP_ASSET_VERSION = "2026-04-05-11";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -307,6 +307,7 @@ function handleWorkerMessage(event) {
   if (type === "saveData") {
     state.workerSaveData = payload || null;
     savePopulation(payload);
+    applyVisualizationPayload(payload);
 
     if (state.pendingSaveRequest) {
       const { resolve, timeoutId } = state.pendingSaveRequest;
@@ -1779,13 +1780,6 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
       }
     : null;
-
-  if (payload.visualization) {
-    payload.visualization = trimVisualizationState(
-      payload.visualization,
-      payload.config?.networkVizHistoryDepth ?? state.networkVizHistoryDepth,
-    );
-  }
 
   state.savedPopulationData = payload;
   state.workerSaveData = payload;
