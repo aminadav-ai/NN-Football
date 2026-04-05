@@ -2783,10 +2783,11 @@ function colorToCss(color) {
 }
 
 function getConnectionStyle(connection, historyDepth = NETWORK_VIZ_HISTORY_LIMIT) {
-  const baseColor = { r: 135, g: 203, b: 255, a: 0.08 + Math.min(0.16, Math.abs(connection.weight || 0) * 0.05) };
+  const baseColor = { r: 135, g: 203, b: 255, a: 0.16 };
   const recentColor = { r: 255, g: 98, b: 98, a: 0.88 };
   const olderColor = { r: 255, g: 176, b: 176, a: 0.46 };
   const effectiveHistoryDepth = normalizeNetworkVizHistoryDepth(historyDepth);
+  const thinLineWidth = 1;
 
   if (
     connection.age === null
@@ -2795,7 +2796,7 @@ function getConnectionStyle(connection, historyDepth = NETWORK_VIZ_HISTORY_LIMIT
   ) {
     return {
       strokeStyle: colorToCss(baseColor),
-      lineWidth: 0.75 + Math.min(1.9, Math.abs(connection.weight || 0) * 0.3),
+      lineWidth: thinLineWidth,
     };
   }
 
@@ -2805,7 +2806,7 @@ function getConnectionStyle(connection, historyDepth = NETWORK_VIZ_HISTORY_LIMIT
 
   return {
     strokeStyle: colorToCss(mixed),
-    lineWidth: 1 + Math.min(2.6, Math.abs(connection.weight || 0) * 0.35 + freshness * 1.4),
+    lineWidth: thinLineWidth,
   };
 }
 
