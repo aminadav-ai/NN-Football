@@ -115,95 +115,98 @@
       </aside>
 
       <main class="pitch-wrap">
-        <section class="log-panel">
-          <h2>Журнал</h2>
-          <pre id="log"></pre>
-        </section>
-        <div class="pitch-column">
-          <div class="pitch-stage" id="pitchStage">
-            <canvas id="pitch" width="1100" height="680" aria-label="Футбольное поле"></canvas>
-          </div>
-          <div class="match-controls">
-            <button id="pauseBtn" class="pause-btn">Пауза</button>
-            <button id="skipBtn" class="skip-btn">Пропустить матч</button>
-            <label class="overlay-toggle" for="showTimeToggle">
-              <input id="showTimeToggle" type="checkbox" checked />
-              <span>Показывать индикатор времени</span>
-            </label>
-            <label class="overlay-toggle" for="showFieldStripesToggle">
-              <input id="showFieldStripesToggle" type="checkbox" checked />
-              <span>Показывать полосы на поле</span>
-            </label>
-          </div>
-
-          <section class="generation-flow-card" id="generationFlowPanel" aria-label="Визуализация смены особей по поколениям">
-            <div class="generation-flow-header">
-              <div>
-                <h2>Смена особей по поколениям</h2>
-                <p id="generationFlowStatus" class="generation-flow-status">История поколений появится после завершения первых матчей.</p>
-              </div>
-            </div>
-            <div class="generation-flow-scroll" id="generationFlowScroll">
-              <canvas
-                id="generationFlowCanvas"
-                class="generation-flow-canvas"
-                width="1100"
-                height="280"
-                aria-label="Схема поколений и переходов особей"
-              ></canvas>
-            </div>
-            <div class="generation-flow-legend">
-              <span><i class="legend-swatch legend-swatch-base"></i>особь поколения</span>
-              <span><i class="legend-swatch legend-swatch-recent"></i>выбранная особь</span>
-            </div>
+        <div class="top-panels-row">
+          <section class="log-panel">
+            <h2>Журнал</h2>
+            <pre id="log"></pre>
           </section>
 
-          <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
-            <div class="network-viz-header">
-              <div>
-                <h2>Эволюция нейросети</h2>
-                <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
+          <div class="pitch-column">
+            <div class="pitch-stage" id="pitchStage">
+              <canvas id="pitch" width="1100" height="680" aria-label="Футбольное поле"></canvas>
+            </div>
+            <div class="match-controls">
+              <button id="pauseBtn" class="pause-btn">Пауза</button>
+              <button id="skipBtn" class="skip-btn">Пропустить матч</button>
+              <label class="overlay-toggle" for="showTimeToggle">
+                <input id="showTimeToggle" type="checkbox" checked />
+                <span>Показывать индикатор времени</span>
+              </label>
+              <label class="overlay-toggle" for="showFieldStripesToggle">
+                <input id="showFieldStripesToggle" type="checkbox" checked />
+                <span>Показывать полосы на поле</span>
+              </label>
+            </div>
+          </div>
+
+          <section class="fitness-panels" id="fitnessPanels" aria-label="Расшифровка фитнеса по командам">
+            <article class="fitness-card fitness-card-combined">
+              <h2>Расшифровка фитнеса за матч</h2>
+              <table class="fitness-table fitness-table-combined">
+                <thead>
+                  <tr>
+                    <th>Составляющая</th>
+                    <th id="fitnessHeaderA">A</th>
+                    <th id="fitnessHeaderB">B</th>
+                  </tr>
+                </thead>
+                <tbody id="fitnessTableCombined"></tbody>
+              </table>
+            </article>
+
+            <section class="stats stats-inline">
+              <h2>Состояние</h2>
+              <div class="stats-list">
+                <div><span>Поколение:</span> <strong id="generation">0</strong></div>
+                <div><span>Матч:</span> <strong id="matchInfo">—</strong></div>
+                <div><span>Игр/с (10с):</span> <strong id="gamesPerSecond">0.00</strong></div>
+                <div><span>Лучший в поколении:</span> <strong id="bestFitness">0.00</strong></div>
+                <div><span>Режим:</span> <strong id="modeInfo">Быстрый</strong></div>
+                <div><span>Отрисовка:</span> <strong id="renderInfo">Вкл.</strong></div>
               </div>
-            </div>
-            <canvas
-              id="networkVizCanvas"
-              class="network-viz-canvas"
-              width="1100"
-              height="420"
-              aria-label="Схема нейросети и недавних изменений связей"
-            ></canvas>
-            <div class="network-viz-legend">
-              <span><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
-            </div>
+            </section>
           </section>
         </div>
 
-        <section class="fitness-panels" id="fitnessPanels" aria-label="Расшифровка фитнеса по командам">
-          <article class="fitness-card fitness-card-combined">
-            <h2>Расшифровка фитнеса за матч</h2>
-            <table class="fitness-table fitness-table-combined">
-              <thead>
-                <tr>
-                  <th>Составляющая</th>
-                  <th id="fitnessHeaderA">A</th>
-                  <th id="fitnessHeaderB">B</th>
-                </tr>
-              </thead>
-              <tbody id="fitnessTableCombined"></tbody>
-            </table>
-          </article>
-
-          <section class="stats stats-inline">
-            <h2>Состояние</h2>
-            <div class="stats-list">
-              <div><span>Поколение:</span> <strong id="generation">0</strong></div>
-              <div><span>Матч:</span> <strong id="matchInfo">—</strong></div>
-              <div><span>Игр/с (10с):</span> <strong id="gamesPerSecond">0.00</strong></div>
-              <div><span>Лучший в поколении:</span> <strong id="bestFitness">0.00</strong></div>
-              <div><span>Режим:</span> <strong id="modeInfo">Быстрый</strong></div>
-              <div><span>Отрисовка:</span> <strong id="renderInfo">Вкл.</strong></div>
+        <section class="generation-flow-card" id="generationFlowPanel" aria-label="Визуализация смены особей по поколениям">
+          <div class="generation-flow-header">
+            <div>
+              <h2>Смена особей по поколениям</h2>
+              <p id="generationFlowStatus" class="generation-flow-status">История поколений появится после завершения первых матчей.</p>
             </div>
-          </section>
+          </div>
+          <div class="generation-flow-scroll" id="generationFlowScroll">
+            <canvas
+              id="generationFlowCanvas"
+              class="generation-flow-canvas"
+              width="1100"
+              height="280"
+              aria-label="Схема поколений и переходов особей"
+            ></canvas>
+          </div>
+          <div class="generation-flow-legend">
+            <span><i class="legend-swatch legend-swatch-base"></i>особь поколения</span>
+            <span><i class="legend-swatch legend-swatch-recent"></i>выбранная особь</span>
+          </div>
+        </section>
+
+        <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
+          <div class="network-viz-header">
+            <div>
+              <h2>Эволюция нейросети</h2>
+              <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
+            </div>
+          </div>
+          <canvas
+            id="networkVizCanvas"
+            class="network-viz-canvas"
+            width="1100"
+            height="420"
+            aria-label="Схема нейросети и недавних изменений связей"
+          ></canvas>
+          <div class="network-viz-legend">
+            <span><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
+          </div>
         </section>
       </main>
     </div>

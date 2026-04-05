@@ -259,14 +259,25 @@ button.max-btn {
 
 .pitch-wrap {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 68px 16px 16px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.top-panels-row {
+  display: flex;
   flex-direction: row;
   align-items: flex-start;
   justify-content: center;
   gap: 18px;
-  min-height: 100vh;
-  padding: 68px 16px 16px 16px;
-  overflow-x: auto;
-  overflow-y: auto;
+  width: min(1210px, calc(100vw - 32px));
+  max-width: 100%;
 }
 
 .pitch-column {
@@ -275,8 +286,8 @@ button.max-btn {
   align-items: center;
   gap: 14px;
   flex: 0 1 574px;
-  width: min(574px, calc(100vw - 32px));
-  max-width: min(574px, calc(100vw - 32px));
+  width: min(574px, 100%);
+  max-width: min(574px, 100%);
   min-width: 0;
 }
 
@@ -289,7 +300,7 @@ button.max-btn {
 
 .generation-flow-card,
 .network-viz-card {
-  width: 100%;
+  width: min(1210px, calc(100vw - 32px));
   max-width: 100%;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.04);
@@ -556,9 +567,14 @@ canvas {
   }
 
   .pitch-wrap {
-    flex-direction: column;
     align-items: center;
     padding: 68px 16px 16px 16px;
+  }
+
+  .top-panels-row {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
   }
 
   .log-panel {
@@ -573,6 +589,11 @@ canvas {
     min-width: 0;
     max-width: 320px;
     flex-basis: auto;
+  }
+
+  .generation-flow-card,
+  .network-viz-card {
+    width: min(100%, calc(100vw - 32px));
   }
 
   .network-viz-canvas {
