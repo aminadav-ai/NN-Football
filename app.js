@@ -2866,14 +2866,12 @@ function colorToCss(color) {
   return `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
 }
 
-function getConnectionStyle(connection) {
-  const baseColor = { r: 135, g: 203, b: 255, a: 0.16 };
-  const recentColor = { r: 255, g: 98, b: 98, a: 0.88 };
-  const thinLineWidth = 1;
+function getConnectionStyle() {
+  const recentColor = { r: 255, g: 98, b: 98, a: 0.9 };
 
   return {
-    strokeStyle: colorToCss(connection?.highlighted ? recentColor : baseColor),
-    lineWidth: thinLineWidth,
+    strokeStyle: colorToCss(recentColor),
+    lineWidth: 1,
   };
 }
 
@@ -2978,8 +2976,8 @@ function drawNetworkVisualization(data = state.networkVizData) {
     });
   });
 
-  const sortedConnections = [...data.connections].sort((a, b) => (b.age ?? 999) - (a.age ?? 999));
-  for (const connection of sortedConnections) {
+  const visibleConnections = data.connections.filter((connection) => connection.highlighted);
+  for (const connection of visibleConnections) {
     const source = positions.get(connection.from);
     const target = positions.get(connection.to);
     if (!source || !target) {
