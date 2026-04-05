@@ -896,9 +896,9 @@ class FootballMatch {
 
   controlPlayer(player, dt) {
     const inputs = this.collectVision(player);
-    const [speedSignal, directionSignal] = player.network.forward(inputs);
-    const targetSpeed = ((speedSignal + 1) / 2) * MAX_PLAYER_SPEED;
-    player.dir = normalizeAngle(player.dir + directionSignal * 2.4 * dt);
+    const [throttleSignal, turnSignal] = player.network.forward(inputs);
+    const targetSpeed = clamp(throttleSignal, -1, 1) * MAX_PLAYER_SPEED;
+    player.dir = normalizeAngle(player.dir + clamp(turnSignal, -1, 1) * 2.4 * dt);
 
     const desiredVx = Math.cos(player.dir) * targetSpeed;
     const desiredVy = Math.sin(player.dir) * targetSpeed;
