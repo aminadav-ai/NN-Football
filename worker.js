@@ -7,7 +7,7 @@ const FIELD = {
   pxPerMeter: 10,
 };
 
-const INPUT_SIZE = 49;
+const INPUT_SIZE = 31;
 const OUTPUT_SIZE = 2;
 const SENSOR_COUNT = 8;
 const MAX_SIGHT = 130;
@@ -204,11 +204,37 @@ function deserializeNetwork(data) {
     throw new Error("Некорректные данные нейросети.");
   }
 
-  return new NeuralNetwork(
-    data.layerSizes,
-    data.weights.map((layer) => layer.map((row) => [...row])),
-    data.biases.map((layer) => [...layer]),
-  );
+  const layerSizes = data.layerSizes.map((size) => Math.max(1, Math.floor(Number(size) || 0)));
+  const weights = data.weights.map((layer) => layer.map((row) => [...row]));
+  const biases = data.biases.map((layer) => [...layer]);
+  const expectedLayerSizes = [...layerSizes];
+  expectedLayerSizes[0] = INPUT_SIZE;
+  expectedLayerSizes[expectedLayerSizes.length - 1] = OUTPUT_SIZE;
+
+  if (expectedLayerSizes.some((size, index) => size !== layerSizes[index])) {
+    const adapted = new NeuralNetwork(expectedLayerSizes);
+
+    for (let layerIndex = 0; layerIndex < Math.min(adapted.weights.length, weights.length); layerIndex += 1) {
+      const targetLayer = adapted.weights[layerIndex];
+      const sourceLayer = weights[layerIndex] || [];
+      for (let row = 0; row < Math.min(targetLayer.length, sourceLayer.length); row += 1) {
+        const sourceRow = sourceLayer[row] || [];
+        for (let col = 0; col < Math.min(targetLayer[row].length, sourceRow.length); col += 1) {
+          targetLayer[row][col] = sourceRow[col];
+        }
+      }
+
+      const targetBiases = adapted.biases[layerIndex];
+      const sourceBiases = biases[layerIndex] || [];
+      for (let index = 0; index < Math.min(targetBiases.length, sourceBiases.length); index += 1) {
+        targetBiases[index] = sourceBiases[index];
+      }
+    }
+
+    return adapted;
+  }
+
+  return new NeuralNetwork(expectedLayerSizes, weights, biases);
 }
 
 function serializeMatchState(match, currentA, currentB, detail = "full") {
@@ -917,10 +943,10 @@ class FootballMatch {
     return [
       ...senseTargets(player, teammates),
       ...senseTargets(player, opponents),
-      ...senseTargets(player, [this.ball]),
+      ...senseDirectionAndDistance(player, this.ball),
       ...senseBoundaries(player),
-      ...senseTargets(player, [{ x: ownGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
-      ...senseTargets(player, [{ x: oppGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }]),
+      ...senseDirectionAndDistance(player, { x: ownGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }),
+      ...senseDirectionAndDistance(player, { x: oppGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }),
       normalizedMatchTime,
     ];
   }
@@ -1469,6 +1495,22 @@ function senseTargets(player, targets) {
   }
 
   return sensors;
+}
+
+function senseDirectionAndDistance(player, target) {
+  if (!target) {
+    return [0, 1];
+  }
+
+  const dx = target.x - player.x;
+  const dy = target.y - player.y;
+  const distance = Math.max(0, Math.hypot(dx, dy) - (target.radius || 0));
+  const angle = normalizeAngle(Math.atan2(dy, dx) - player.dir);
+
+  return [
+    clamp(angle / Math.PI, -1, 1),
+    clamp(distance / MAX_SIGHT, 0, 1),
+  ];
 }
 
 function senseBoundaries(player) {
