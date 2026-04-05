@@ -49,7 +49,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-7";
+const APP_ASSET_VERSION = "2026-04-05-8";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -179,11 +179,7 @@ function random() {
 
 const initialRandomSeed = setRandomSeed(Date.now());
 
-const logs = [
-  "Flower-3 готов к обучению.",
-  `Генератор случайных чисел инициализирован по времени: ${initialRandomSeed}.`,
-  "Нажмите «Новое обучение» или загрузите сохранение из файла.",
-];
+const logs = [];
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -212,17 +208,11 @@ function shuffle(array) {
   return copy;
 }
 
-function addLog(message) {
-  logs.unshift(message);
-  if (logs.length > MAX_LOG_ENTRIES) {
-    logs.length = MAX_LOG_ENTRIES;
-  }
-  ui.log.textContent = logs.join("\n");
+function addLog(_message) {
 }
 
 function clearLogs() {
   logs.length = 0;
-  ui.log.textContent = "";
 }
 
 function postToWorker(type, payload = {}) {
@@ -1637,7 +1627,6 @@ function applyLoadedPopulationPayload(payload) {
   }
 
   payload.pitchWidth = Number.isFinite(payload.pitchWidth) ? payload.pitchWidth : state.pitchWidth;
-  payload.logs = Array.isArray(payload.logs) ? payload.logs.slice(0, MAX_LOG_ENTRIES) : [...logs];
 
   state.savedPopulationData = payload;
   state.workerSaveData = payload;
@@ -1657,9 +1646,6 @@ function applyLoadedPopulationPayload(payload) {
     state.pitchWidth = payload.pitchWidth;
     applyPitchWidth();
   }
-  logs.length = 0;
-  logs.push(...payload.logs);
-  ui.log.textContent = logs.join("\n");
   updateSaveStatus(payload);
   return payload;
 }
@@ -1679,7 +1665,6 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
 
   payload.savedAt = Date.now();
   payload.pitchWidth = state.pitchWidth;
-  payload.logs = [...logs];
   payload.config = payload.config
     ? {
         ...payload.config,
@@ -3738,5 +3723,4 @@ updateSaveStatus(null);
 applySidebarState();
 applyPitchWidth();
 updateStats();
-ui.log.textContent = logs.join("\n");
 requestAnimationFrame(tick);
