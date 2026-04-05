@@ -215,6 +215,39 @@ function clearLogs() {
   logs.length = 0;
 }
 
+function saveSettingsToLocalStorage(config = readConfig()) {
+  if (typeof localStorage === "undefined") {
+    return false;
+  }
+
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(config));
+    return true;
+  } catch (error) {
+    console.warn("Не удалось сохранить настройки в localStorage:", error);
+    return false;
+  }
+}
+
+function loadSettingsFromLocalStorage() {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    console.warn("Не удалось загрузить настройки из localStorage:", error);
+    return null;
+  }
+}
+
 function postToWorker(type, payload = {}) {
   state.worker?.postMessage({ type, payload });
 }
@@ -533,6 +566,7 @@ function applySpeedState(options = {}) {
   }
 
   if (shouldPersist) {
+    saveSettingsToLocalStorage();
     savePopulation();
   }
 }
@@ -590,6 +624,7 @@ function applyLiveFitnessSettings() {
     savePopulation(saveSource);
   }
 
+  saveSettingsToLocalStorage();
   return fitnessSettings;
 }
 
@@ -611,6 +646,7 @@ function applyLiveCrossoverSettings() {
     savePopulation(saveSource);
   }
 
+  saveSettingsToLocalStorage();
   return crossoverRate;
 }
 
@@ -631,6 +667,7 @@ function applyLiveMutationSettings() {
     savePopulation(saveSource);
   }
 
+  saveSettingsToLocalStorage();
   return mutationSettings;
 }
 
@@ -899,7 +936,12 @@ function drawGenerationFlow() {
       : selected.createdBy === "initial"
         ? "стартовая особь"
         : "без родителей";
-    ui.generationFlowStatus.textContent = `Поколений сохранено: ${timeline.length} · клик по кружку выбирает особь · сейчас #${selected.id} из G${selected.generation} · ${parentText}`;
+    const originText = selected.createdBy === "elite"
+      ? "прямой перенос"
+      : selected.createdBy === "initial"
+        ? "исходная особь"
+        : "мутант";
+    ui.generationFlowStatus.textContent = `Поколений сохранено: ${timeline.length} · клик по кружку выбирает особь · сейчас #${selected.id} из G${selected.generation} · ${originText} · ${parentText}`;
   }
 
   const maxRows = Math.max(1, ...timeline.map((entry) => entry.individuals.length));
@@ -993,6 +1035,13 @@ function drawGenerationFlow() {
       viz.strokeStyle = "rgba(20, 36, 50, 0.95)";
       viz.stroke();
 
+      if (individual.createdBy !== "elite" && individual.createdBy !== "initial") {
+        viz.beginPath();
+        viz.arc(x * ratio, y * ratio, Math.max(1.7, circleRadius * 0.32) * ratio, 0, Math.PI * 2);
+        viz.fillStyle = "rgba(20, 36, 50, 0.98)";
+        viz.fill();
+      }
+
       if (isSelected) {
         viz.beginPath();
         viz.arc(x * ratio, y * ratio, circleRadius * ratio + 4 * ratio, 0, Math.PI * 2);
@@ -1048,11 +1097,11 @@ function setControlsFromConfig(config) {
   if (!config) return;
 
   ui.teamSize.value = String(clamp(Number(config.teamSize) || 4, 1, 8));
-  ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 2, 1, 4));
-  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 16, 4, 500));
-  ui.populationSize.value = String(clamp(Number(config.populationSize) || 12, 4, 40));
-  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames, config.populationSize));
-  ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 1), 1, 10));
+  ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 1, 1, 4));
+  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 40, 4, 500));
+  ui.populationSize.value = String(clamp(Number(config.populationSize) || 11, 4, 40));
+  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames ?? 30, config.populationSize ?? 11));
+  ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 2), 1, 10));
   ui.goalWidth.value = String(normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth));
   ui.showTimeToggle.checked = config.showTimeIndicator !== false;
   state.showTimeIndicator = ui.showTimeToggle.checked;
@@ -1641,6 +1690,7 @@ function applyLoadedPopulationPayload(payload) {
 
   if (payload.config) {
     setControlsFromConfig(payload.config);
+    saveSettingsToLocalStorage(readConfig());
   }
   if (Number.isFinite(payload.pitchWidth)) {
     state.pitchWidth = payload.pitchWidth;
@@ -3015,11 +3065,11 @@ function stopPitchResize() {
 function readConfig() {
   return {
     teamSize: clamp(Number(ui.teamSize.value) || 4, 1, 8),
-    hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 2, 1, 4),
-    neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 16, 4, 500),
-    populationSize: clamp(Number(ui.populationSize.value) || 12, 4, 40),
-    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value, ui.populationSize.value),
-    matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 10), 1, 10),
+    hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 1, 1, 4),
+    neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 40, 4, 500),
+    populationSize: clamp(Number(ui.populationSize.value) || 11, 4, 40),
+    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value || 30, ui.populationSize.value || 11),
+    matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 2), 1, 10),
     goalWidth: normalizeGoalWidth(ui.goalWidth.value),
     speedPreset: state.speedPreset,
     speedMultiplier: state.speedMultiplier,
@@ -3494,7 +3544,9 @@ ui.startBtn.addEventListener("click", () => {
   state.generationFlowVersionRendered = null;
   state.networkVizHistoryOffset = 0;
   state.isPaused = false;
-  postToWorker("startNew", { config: readConfig(), resetIds: true });
+  const config = readConfig();
+  saveSettingsToLocalStorage(config);
+  postToWorker("startNew", { config, resetIds: true });
 });
 
 ui.saveFileBtn.addEventListener("click", async () => {
@@ -3577,6 +3629,7 @@ ui.pauseBtn.addEventListener("click", () => {
 ui.showTimeToggle.addEventListener("change", () => {
   state.showTimeIndicator = ui.showTimeToggle.checked;
   postToWorker("updateConfig", { showTimeIndicator: state.showTimeIndicator });
+  saveSettingsToLocalStorage();
   savePopulation();
   addLog(state.showTimeIndicator ? "Индикатор времени матча включён." : "Индикатор времени матча скрыт.");
 });
@@ -3584,6 +3637,7 @@ ui.showTimeToggle.addEventListener("change", () => {
 ui.showFieldStripesToggle.addEventListener("change", () => {
   state.showFieldStripes = ui.showFieldStripesToggle.checked;
   postToWorker("updateConfig", { showFieldStripes: state.showFieldStripes });
+  saveSettingsToLocalStorage();
   savePopulation();
   addLog(state.showFieldStripes ? "Полосы на поле включены." : "Полосы на поле скрыты.");
 });
@@ -3677,6 +3731,8 @@ ui.matchMinutes.addEventListener("change", () => {
   } else {
     addLog(`Длительность новых матчей установлена: ${minutes} мин.`);
   }
+
+  saveSettingsToLocalStorage();
 });
 
 ui.goalWidth.addEventListener("change", () => {
@@ -3689,6 +3745,7 @@ ui.goalWidth.addEventListener("change", () => {
     state.trainer.updateGoalWidth(goalWidth);
   }
 
+  saveSettingsToLocalStorage();
   savePopulation();
   addLog(`Размер ворот установлен: ${goalWidth} м.`);
 });
@@ -3707,8 +3764,22 @@ ui.tournamentGames.addEventListener("change", () => {
     addLog(`Минимум игр на особь в турнире: ${tournamentGames}.`);
   }
 
+  saveSettingsToLocalStorage();
   savePopulation();
-});ui.skipBtn.addEventListener("click", () => {
+});
+
+[
+  ui.teamSize,
+  ui.hiddenLayers,
+  ui.neuronsPerLayer,
+  ui.populationSize,
+].forEach((input) => {
+  input?.addEventListener("change", () => {
+    saveSettingsToLocalStorage();
+  });
+});
+
+ui.skipBtn.addEventListener("click", () => {
   if (!state.workerStatus?.running) {
     addLog("Сейчас нет активного матча для пропуска.");
     return;
@@ -3718,6 +3789,10 @@ ui.tournamentGames.addEventListener("change", () => {
 });
 
 applySpeedState({ notifyWorker: false, persist: false });
+const storedSettings = loadSettingsFromLocalStorage();
+if (storedSettings) {
+  setControlsFromConfig(storedSettings);
+}
 updateSaveStatus(null);
 
 applySidebarState();
