@@ -138,16 +138,33 @@
             </label>
           </div>
 
+          <section class="generation-flow-card" id="generationFlowPanel" aria-label="Визуализация смены особей по поколениям">
+            <div class="generation-flow-header">
+              <div>
+                <h2>Смена особей по поколениям</h2>
+                <p id="generationFlowStatus" class="generation-flow-status">История поколений появится после завершения первых матчей.</p>
+              </div>
+            </div>
+            <div class="generation-flow-scroll" id="generationFlowScroll">
+              <canvas
+                id="generationFlowCanvas"
+                class="generation-flow-canvas"
+                width="1100"
+                height="280"
+                aria-label="Схема поколений и переходов особей"
+              ></canvas>
+            </div>
+            <div class="generation-flow-legend">
+              <span><i class="legend-swatch legend-swatch-base"></i>особь поколения</span>
+              <span><i class="legend-swatch legend-swatch-recent"></i>выбранная особь</span>
+            </div>
+          </section>
+
           <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
             <div class="network-viz-header">
               <div>
                 <h2>Эволюция нейросети</h2>
                 <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
-              </div>
-              <div class="network-viz-nav" aria-label="Просмотр истории изменений">
-                <button id="networkVizOlderBtn" class="network-viz-nav-btn" type="button" title="Показать более старое изменение" aria-label="Показать более старое изменение">▲</button>
-                <button id="networkVizNewerBtn" class="network-viz-nav-btn" type="button" title="Показать более новое изменение" aria-label="Показать более новое изменение">▼</button>
-                <div id="networkVizStepInfo" class="network-viz-step">0/0</div>
               </div>
             </div>
             <canvas
@@ -158,7 +175,7 @@
               aria-label="Схема нейросети и недавних изменений связей"
             ></canvas>
             <div class="network-viz-legend">
-              <span><i class="legend-swatch legend-swatch-recent"></i>показаны только связи выбранного изменения</span>
+              <span><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
             </div>
           </section>
         </div>
@@ -193,6 +210,6 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=2026-04-05-6"></script>
+    <script type="module" src="./app.js?v=2026-04-05-7"></script>
   </body>
 </html>
