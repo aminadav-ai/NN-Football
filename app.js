@@ -20,13 +20,13 @@ const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
 const MATCH_RATE_WINDOW_MS = 10000;
 const MAX_TOURNAMENT_GAMES = 500;
 const FITNESS_SETTINGS_DEFAULTS = {
-  goalReward: 35,
-  concededPenalty: -10,
-  ownGoalPenalty: -25,
+  goalReward: 1,
+  concededPenalty: 0,
+  ownGoalPenalty: -0.01,
 };
-const CROSSOVER_RATE_DEFAULT = 1;
+const CROSSOVER_RATE_DEFAULT = 0;
 const MUTATION_SETTINGS_DEFAULTS = {
-  rate: 0.1,
+  rate: 0.01,
   amount: 0.28,
 };
 const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
@@ -124,7 +124,7 @@ const state = {
   showGames: true,
   stepsPerFrame: FAST_STEPS,
   speedPreset: "fast",
-  speedMultiplier: 1,
+  speedMultiplier: 0.25,
   useMaxSpeed: false,
   mode: "Быстрый",
   trainer: null,

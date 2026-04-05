@@ -21,13 +21,13 @@ const MAX_TOURNAMENT_GAMES = 500;
 const STATUS_INTERVAL_FULL_MS = 33;
 const STATUS_INTERVAL_SUMMARY_MS = 120;
 const FITNESS_SETTINGS_DEFAULTS = {
-  goalReward: 35,
-  concededPenalty: -10,
-  ownGoalPenalty: -25,
+  goalReward: 1,
+  concededPenalty: 0,
+  ownGoalPenalty: -0.01,
 };
-const CROSSOVER_RATE_DEFAULT = 1;
+const CROSSOVER_RATE_DEFAULT = 0;
 const MUTATION_SETTINGS_DEFAULTS = {
-  rate: 0.1,
+  rate: 0.01,
   amount: 0.28,
 };
 const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
