@@ -43,7 +43,6 @@ const NETWORK_VIZ_INPUT_GROUPS = [
 ];
 const HARD_COLLISION_THRESHOLD = 1.5;
 const MAX_LOG_ENTRIES = 1000;
-const POPULATION_STORAGE_KEY = "flower-3.population.v1";
 const FITNESS_BREAKDOWN_ROWS = [
   { key: "goals", label: "Гол сопернику" },
   { key: "conceded", label: "Пропущенный гол" },
@@ -183,7 +182,7 @@ const initialRandomSeed = setRandomSeed(Date.now());
 const logs = [
   "Flower-3 готов к обучению.",
   `Генератор случайных чисел инициализирован по времени: ${initialRandomSeed}.`,
-  "Нажмите «Новое обучение» или загрузите последнее сохранение.",
+  "Нажмите «Новое обучение» или загрузите сохранение из файла.",
 ];
 
 function clamp(value, min, max) {
@@ -1565,32 +1564,21 @@ function serializeMatchState(match, currentA, currentB) {
 }
 
 function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = "") {
-  ui.loadBtn.disabled = !savedData;
-  ui.saveFileBtn.disabled = !savedData && !state.workerSaveData?.population?.length && !state.trainer?.population?.length;
+  if (ui.loadBtn) {
+    ui.loadBtn.disabled = true;
+  }
+  if (ui.saveFileBtn) {
+    ui.saveFileBtn.disabled = !savedData && !state.workerSaveData?.population?.length && !state.trainer?.population?.length;
+  }
+  if (!ui.saveStatus) {
+    return;
+  }
+
   ui.saveStatus.classList.remove("ready", "error");
-
-  if (savedData) {
-    const savedAtText = Number.isFinite(savedData.savedAt)
-      ? new Date(savedData.savedAt).toLocaleString("ru-RU", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "время неизвестно";
-    ui.saveStatus.textContent = `Найдено сохранение: Поколение ${savedData.generation} · ${savedAtText}`;
-    ui.saveStatus.classList.add("ready");
-    return;
-  }
-
+  ui.saveStatus.textContent = errorMessage || "";
   if (errorMessage) {
-    ui.saveStatus.textContent = errorMessage;
     ui.saveStatus.classList.add("error");
-    return;
   }
-
-  ui.saveStatus.textContent = "Сохранение не найдено.";
 }
 
 function buildSavePayloadFromTrainer(trainer) {
@@ -1643,23 +1631,13 @@ function buildSavePayloadFromTrainer(trainer) {
   };
 }
 
-function applyLoadedPopulationPayload(payload, options = {}) {
+function applyLoadedPopulationPayload(payload) {
   if (!payload || !Array.isArray(payload.population) || payload.population.length === 0) {
     throw new Error("Пустое сохранение.");
   }
 
-  const persistToLocalStorage = options.persistToLocalStorage !== false;
-
   payload.pitchWidth = Number.isFinite(payload.pitchWidth) ? payload.pitchWidth : state.pitchWidth;
   payload.logs = Array.isArray(payload.logs) ? payload.logs.slice(0, MAX_LOG_ENTRIES) : [...logs];
-
-  if (persistToLocalStorage) {
-    try {
-      localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
-    } catch (error) {
-      console.warn("Не удалось записать полную историю поколений в localStorage:", error);
-    }
-  }
 
   state.savedPopulationData = payload;
   state.workerSaveData = payload;
@@ -1720,38 +1698,11 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
       }
     : null;
 
-  try {
-    localStorage.setItem(POPULATION_STORAGE_KEY, JSON.stringify(payload));
-    state.savedPopulationData = payload;
-    state.workerSaveData = payload;
-    applyVisualizationPayload(payload);
-    updateSaveStatus(payload);
-    return true;
-  } catch (error) {
-    console.error("Не удалось сохранить популяцию:", error);
-    updateSaveStatus(state.savedPopulationData, "Не удалось сохранить популяцию в браузере.");
-    return false;
-  }
-}
-
-function loadPopulation() {
-  const raw = localStorage.getItem(POPULATION_STORAGE_KEY);
-  if (!raw) {
-    state.savedPopulationData = null;
-    updateSaveStatus(null);
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(raw);
-    return applyLoadedPopulationPayload(payload, { persistToLocalStorage: false });
-  } catch (error) {
-    console.error("Не удалось загрузить сохранение:", error);
-    localStorage.removeItem(POPULATION_STORAGE_KEY);
-    state.savedPopulationData = null;
-    updateSaveStatus(null, "Сохранение повреждено и было сброшено.");
-    return null;
-  }
+  state.savedPopulationData = payload;
+  state.workerSaveData = payload;
+  applyVisualizationPayload(payload);
+  updateSaveStatus(payload);
+  return true;
 }
 
 function startTrainingFromSavedData(savedData, sourceLabel = "браузера") {
@@ -3561,16 +3512,6 @@ ui.startBtn.addEventListener("click", () => {
   postToWorker("startNew", { config: readConfig(), resetIds: true });
 });
 
-ui.loadBtn.addEventListener("click", () => {
-  const savedData = loadPopulation();
-  if (!savedData) {
-    addLog("Сохранение не найдено.");
-    return;
-  }
-
-  startTrainingFromSavedData(savedData, "localStorage");
-});
-
 ui.saveFileBtn.addEventListener("click", async () => {
   const savedData = await requestLatestSaveData();
   if (!savedData?.population?.length) {
@@ -3599,7 +3540,7 @@ ui.loadFileInput.addEventListener("change", async () => {
   try {
     const raw = await file.text();
     const payload = JSON.parse(raw);
-    const savedData = applyLoadedPopulationPayload(payload, { persistToLocalStorage: true });
+    const savedData = applyLoadedPopulationPayload(payload);
     startTrainingFromSavedData(savedData, `файла ${file.name}`);
   } catch (error) {
     console.error("Не удалось загрузить файл сохранения:", error);
@@ -3791,20 +3732,8 @@ ui.tournamentGames.addEventListener("change", () => {
   postToWorker("skipMatch");
 });
 
-ensureWorker();
 applySpeedState({ notifyWorker: false, persist: false });
-const initialSavedData = loadPopulation();
-if (initialSavedData) {
-  if (initialSavedData.config) {
-    setControlsFromConfig(initialSavedData.config);
-  }
-
-  state.trainer = null;
-  state.workerSaveData = initialSavedData;
-  state.isPaused = false;
-  postToWorker("loadSaved", { config: readConfig(), savedData: initialSavedData });
-  addLog("Последнее сохранение загружено автоматически.");
-}
+updateSaveStatus(null);
 
 applySidebarState();
 applyPitchWidth();
