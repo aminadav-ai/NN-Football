@@ -311,8 +311,17 @@ function normalizeVisualizationHistory(history = []) {
       changedConnections: Array.isArray(entry?.changedConnections)
         ? entry.changedConnections.filter((key) => typeof key === "string")
         : [],
+      snapshot: deserializeNetworkSnapshot(entry?.snapshot),
     }))
     .slice(0, NETWORK_VIZ_HISTORY_LIMIT);
+}
+
+function serializeVisualizationHistory(history = []) {
+  return normalizeVisualizationHistory(history).map((entry) => ({
+    generation: entry.generation,
+    changedConnections: [...entry.changedConnections],
+    snapshot: serializeNetworkSnapshot(entry.snapshot),
+  }));
 }
 
 function createConnectionKey(layerIndex, rowIndex, columnIndex) {
@@ -446,14 +455,15 @@ function pickVisibleIndices(totalCount, visibleCount) {
 }
 
 function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0, selectedHistoryIndex = 0) {
-  const network = snapshot?.network;
+  const history = normalizeVisualizationHistory(historyEntries).slice(0, NETWORK_VIZ_HISTORY_LIMIT);
+  const activeHistoryIndex = normalizeNetworkVizHistoryOffset(selectedHistoryIndex, Math.max(0, history.length - 1));
+  const activeHistoryEntry = history[activeHistoryIndex] || null;
+  const activeSnapshot = activeHistoryEntry?.snapshot?.network ? activeHistoryEntry.snapshot : snapshot;
+  const network = activeSnapshot?.network;
   if (!network?.layerSizes?.length) {
     return null;
   }
 
-  const history = normalizeVisualizationHistory(historyEntries).slice(0, NETWORK_VIZ_HISTORY_LIMIT);
-  const activeHistoryIndex = normalizeNetworkVizHistoryOffset(selectedHistoryIndex, Math.max(0, history.length - 1));
-  const activeHistoryEntry = history[activeHistoryIndex] || null;
   const activeConnections = new Set(activeHistoryEntry?.changedConnections || []);
 
   const layerSizes = [...network.layerSizes];
@@ -548,17 +558,20 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
   return {
     version,
-    generation: Math.max(0, Math.floor(Number(snapshot?.generation) || 0)),
-    bestId: snapshot?.id ?? null,
-    bestFitness: Number(snapshot?.fitness) || 0,
+    generation: Math.max(0, Math.floor(Number(activeSnapshot?.generation) || 0)),
+    bestId: activeSnapshot?.id ?? null,
+    bestFitness: Number(activeSnapshot?.fitness) || 0,
     layerSizes,
     hiddenTotalCount: hiddenLayerSizes.reduce((sum, count) => sum + count, 0),
     hiddenShownCount: hiddenVisibleCounts.reduce((sum, count) => sum + count, 0),
     availableHistory: history.length,
     activeHistoryIndex,
-    activeHistoryGeneration: activeHistoryEntry?.generation ?? null,
+    activeHistoryGeneration: activeHistoryEntry?.generation ?? activeSnapshot?.generation ?? null,
     activeChangedCount: activeHistoryEntry?.changedConnections?.length || 0,
-    historyEntries: history,
+    historyEntries: history.map((entry) => ({
+      generation: entry.generation,
+      changedConnections: [...entry.changedConnections],
+    })),
     layers,
     connections,
   };
@@ -639,6 +652,9 @@ function createSavePayload() {
       id: individual.id,
       fitness: individual.fitness,
       network: serializeNetwork(individual.network),
+      visualizationChangedConnections: Array.isArray(individual.visualizationChangedConnections)
+        ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
+        : [],
     })),
     bestEver: trainer.bestEver
       ? {
@@ -1534,7 +1550,7 @@ class EvolutionTrainer {
     return {
       lineageBest: serializeNetworkSnapshot(this.lineageBest),
       generationLeader: serializeNetworkSnapshot(this.generationLeader),
-      history: normalizeVisualizationHistory(this.lineageHistory),
+      history: serializeVisualizationHistory(this.lineageHistory),
     };
   }
 
@@ -1623,6 +1639,9 @@ class EvolutionTrainer {
       id: Number(individual.id) || (nextIndividualId += 1),
       network: deserializeNetwork(individual.network),
       fitness: Number(individual.fitness) || 0,
+      visualizationChangedConnections: Array.isArray(individual.visualizationChangedConnections)
+        ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
+        : [],
     }));
 
     const maxLoadedId = this.population.reduce((max, individual) => Math.max(max, individual.id), 0);
@@ -1750,6 +1769,7 @@ class EvolutionTrainer {
       id: nextIndividualId += 1,
       network: NeuralNetwork.random(layers),
       fitness: 0,
+      visualizationChangedConnections: [],
     }));
   }
 
@@ -1903,24 +1923,23 @@ class EvolutionTrainer {
   finishGeneration() {
     const ranked = [...this.population].sort((a, b) => b.fitness - a.fitness);
     const leader = ranked[0];
-    const changedConnections = this.lineageBest?.network
-      ? getChangedConnectionKeys(this.lineageBest.network, leader.network)
-      : [];
-
-    this.lineageBest = {
+    const leaderSnapshot = {
       generation: this.generation,
       id: leader.id,
       fitness: leader.fitness,
       network: leader.network.clone(),
     };
+    const changedConnections = Array.isArray(leader.visualizationChangedConnections)
+      ? leader.visualizationChangedConnections.filter((key) => typeof key === "string")
+      : [];
+
+    this.lineageBest = leaderSnapshot;
     this.generationLeader = {
-      generation: this.generation,
-      id: leader.id,
-      fitness: leader.fitness,
+      ...leaderSnapshot,
       network: leader.network.clone(),
     };
     this.lineageHistory = [
-      { generation: this.generation, changedConnections },
+      { generation: this.generation, snapshot: leaderSnapshot, changedConnections },
       ...normalizeVisualizationHistory(this.lineageHistory),
     ].slice(0, NETWORK_VIZ_HISTORY_LIMIT);
     this.markNetworkVisualizationDirty();
@@ -1941,6 +1960,7 @@ class EvolutionTrainer {
         id: nextIndividualId += 1,
         network: ranked[i].network.clone(),
         fitness: 0,
+        visualizationChangedConnections: [],
       });
     }
 
@@ -1949,15 +1969,19 @@ class EvolutionTrainer {
 
     while (nextGeneration.length < this.population.length) {
       const parentA = this.pickParent(ranked, eliteCount);
-      const baseNetwork = crossoverRate > 0 && random() < crossoverRate
-        ? parentA.network.crossover(this.pickParent(ranked, eliteCount).network)
+      const useCrossover = crossoverRate > 0 && random() < crossoverRate;
+      const parentB = useCrossover ? this.pickParent(ranked, eliteCount) : null;
+      const baseNetwork = useCrossover && parentB
+        ? parentA.network.crossover(parentB.network)
         : parentA.network.clone();
       const child = baseNetwork.mutate(mutationSettings.rate, mutationSettings.amount);
+      const visualizationChangedConnections = getChangedConnectionKeys(parentA.network, child);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
         network: child,
         fitness: 0,
+        visualizationChangedConnections,
       });
     }
 
