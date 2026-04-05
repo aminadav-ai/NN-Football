@@ -50,7 +50,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-9";
+const APP_ASSET_VERSION = "2026-04-05-10";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -116,7 +116,9 @@ const ui = {
   log: document.getElementById("log"),
 };
 
-const supportsOffscreenCanvas = typeof ui.canvas.transferControlToOffscreen === "function";
+const preferSafeMainThreadRenderer = typeof navigator !== "undefined"
+  && /Linux/i.test([navigator.userAgent || "", navigator.platform || ""].join(" "));
+const supportsOffscreenCanvas = !preferSafeMainThreadRenderer && typeof ui.canvas.transferControlToOffscreen === "function";
 let ctx = supportsOffscreenCanvas ? null : ui.canvas.getContext("2d");
 let generationFlowCtx = ui.generationFlowCanvas?.getContext("2d");
 let networkVizCtx = ui.networkVizCanvas?.getContext("2d");
@@ -305,7 +307,6 @@ function handleWorkerMessage(event) {
   if (type === "saveData") {
     state.workerSaveData = payload || null;
     savePopulation(payload);
-    applyVisualizationPayload(payload);
 
     if (state.pendingSaveRequest) {
       const { resolve, timeoutId } = state.pendingSaveRequest;
@@ -362,6 +363,8 @@ function ensureWorker() {
       }
       addLog("OffscreenCanvas недоступен — используется обычная отрисовка.");
     }
+  } else if (!state.useWorkerRenderer && !ctx) {
+    ctx = ui.canvas.getContext("2d");
   }
 
   state.worker = worker;
