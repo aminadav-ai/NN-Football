@@ -31,7 +31,8 @@ const MUTATION_SETTINGS_DEFAULTS = {
   amount: 0.28,
 };
 const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
-const NETWORK_VIZ_HISTORY_LIMIT = 30;
+const DEFAULT_NETWORK_VIZ_HISTORY_DEPTH = 30;
+const NETWORK_VIZ_HISTORY_LIMIT = 100;
 const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_INPUT_GROUPS = [
   { key: "teammates", label: "Свои", size: 8 },
@@ -209,11 +210,22 @@ function normalizeMutationSettings(settings = {}) {
 }
 
 function normalizeNetworkVizHistoryDepth(value) {
-  return clamp(Math.round(toFiniteNumber(value, NETWORK_VIZ_HISTORY_LIMIT)), 1, NETWORK_VIZ_HISTORY_LIMIT);
+  return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HISTORY_DEPTH)), 1, NETWORK_VIZ_HISTORY_LIMIT);
 }
 
 function normalizeNetworkVizHistoryOffset(value, maxOffset = NETWORK_VIZ_HISTORY_LIMIT - 1) {
   return clamp(Math.round(toFiniteNumber(value, 0)), 0, Math.max(0, Math.floor(maxOffset)));
+}
+
+function trimVisualizationHistory(history = [], historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
+  const normalizedDepth = normalizeNetworkVizHistoryDepth(historyDepth);
+  return normalizeVisualizationHistory(history).slice(0, normalizedDepth);
+}
+
+function trimGenerationTimeline(timeline = [], historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
+  const normalizedDepth = normalizeNetworkVizHistoryDepth(historyDepth);
+  const normalizedTimeline = normalizeGenerationTimeline(timeline);
+  return normalizedTimeline.slice(Math.max(0, normalizedTimeline.length - normalizedDepth));
 }
 
 function createEmptyFitnessBreakdown() {
@@ -380,7 +392,8 @@ function normalizeGenerationTimeline(timeline = []) {
       return { generation, individuals };
     })
     .filter((entry) => entry.generation > 0 && entry.individuals.length > 0)
-    .sort((a, b) => a.generation - b.generation);
+    .sort((a, b) => a.generation - b.generation)
+    .slice(-NETWORK_VIZ_HISTORY_LIMIT);
 }
 
 function serializeGenerationTimeline(timeline = []) {
@@ -1619,15 +1632,15 @@ class EvolutionTrainer {
   }
 
   buildVisualizationHistoryForDisplay() {
-    return normalizeVisualizationHistory(this.lineageHistory);
+    return trimVisualizationHistory(this.lineageHistory, this.config?.networkVizHistoryDepth);
   }
 
   restoreVisualizationState(visualization = {}) {
     this.lineageBest = deserializeNetworkSnapshot(visualization.lineageBest);
     this.generationLeader = deserializeNetworkSnapshot(visualization.generationLeader);
-    this.lineageHistory = normalizeVisualizationHistory(visualization.history);
-    this.generationTimeline = normalizeGenerationTimeline(visualization.generationTimeline);
-    this.networkVizHistoryOffset = 0;
+    this.lineageHistory = trimVisualizationHistory(visualization.history, this.config?.networkVizHistoryDepth);
+    this.generationTimeline = trimGenerationTimeline(visualization.generationTimeline, this.config?.networkVizHistoryDepth);
+    this.networkVizHistoryOffset = normalizeNetworkVizHistoryOffset(this.networkVizHistoryOffset, Math.max(0, this.lineageHistory.length - 1));
     this.networkVizVersion = 0;
     this.cachedNetworkViz = null;
     this.markNetworkVisualizationDirty();
@@ -1954,11 +1967,14 @@ class EvolutionTrainer {
 
   updateNetworkVizHistoryDepth(historyDepth) {
     if (!this.config) {
-      return NETWORK_VIZ_HISTORY_LIMIT;
+      return DEFAULT_NETWORK_VIZ_HISTORY_DEPTH;
     }
 
     const normalized = normalizeNetworkVizHistoryDepth(historyDepth);
     this.config.networkVizHistoryDepth = normalized;
+    this.lineageHistory = trimVisualizationHistory(this.lineageHistory, normalized);
+    this.generationTimeline = trimGenerationTimeline(this.generationTimeline, normalized);
+    this.networkVizHistoryOffset = normalizeNetworkVizHistoryOffset(this.networkVizHistoryOffset, Math.max(0, this.lineageHistory.length - 1));
     this.markNetworkVisualizationDirty();
     return normalized;
   }
@@ -2042,6 +2058,7 @@ class EvolutionTrainer {
     this.generationLeader = leaderSnapshot
       ? { ...leaderSnapshot, network: leaderSnapshot.network.clone() }
       : null;
+    const historyDepth = normalizeNetworkVizHistoryDepth(this.config?.networkVizHistoryDepth);
     this.lineageHistory = [
       {
         generation: this.generation,
@@ -2051,8 +2068,8 @@ class EvolutionTrainer {
         createdBy: leaderRecord?.createdBy || "mutation",
       },
       ...normalizeVisualizationHistory(this.lineageHistory),
-    ].slice(0, NETWORK_VIZ_HISTORY_LIMIT);
-    this.generationTimeline = [...this.generationTimeline, generationEntry];
+    ].slice(0, historyDepth);
+    this.generationTimeline = [...this.generationTimeline, generationEntry].slice(-historyDepth);
     this.markNetworkVisualizationDirty();
 
     if (leaderSnapshot && (!this.bestEver || leaderSnapshot.fitness > this.bestEver.fitness)) {

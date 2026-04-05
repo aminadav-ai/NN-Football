@@ -30,7 +30,8 @@ const MUTATION_SETTINGS_DEFAULTS = {
   amount: 0.28,
 };
 const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
-const NETWORK_VIZ_HISTORY_LIMIT = 30;
+const DEFAULT_NETWORK_VIZ_HISTORY_DEPTH = 30;
+const NETWORK_VIZ_HISTORY_LIMIT = 100;
 const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_INPUT_GROUPS = [
   { key: "teammates", label: "Свои", size: 8 },
@@ -49,7 +50,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-8";
+const APP_ASSET_VERSION = "2026-04-05-9";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -157,7 +158,7 @@ const state = {
   networkVizVersionRendered: null,
   networkVizRenderWidth: 0,
   networkVizRenderHeight: 0,
-  networkVizHistoryDepth: 1,
+  networkVizHistoryDepth: DEFAULT_NETWORK_VIZ_HISTORY_DEPTH,
   networkVizHistoryOffset: 0,
 };
 
@@ -591,11 +592,34 @@ function normalizeMutationSettings(settings = {}) {
 }
 
 function normalizeNetworkVizHistoryDepth(value) {
-  return clamp(Math.round(toFiniteNumber(value, NETWORK_VIZ_HISTORY_LIMIT)), 1, NETWORK_VIZ_HISTORY_LIMIT);
+  return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HISTORY_DEPTH)), 1, NETWORK_VIZ_HISTORY_LIMIT);
 }
 
 function normalizeNetworkVizHistoryOffset(value, maxOffset = NETWORK_VIZ_HISTORY_LIMIT - 1) {
   return clamp(Math.round(toFiniteNumber(value, 0)), 0, Math.max(0, Math.floor(maxOffset)));
+}
+
+function trimVisualizationHistory(history = [], historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
+  const normalizedDepth = normalizeNetworkVizHistoryDepth(historyDepth);
+  return normalizeVisualizationHistory(history).slice(0, normalizedDepth);
+}
+
+function trimGenerationTimeline(timeline = [], historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
+  const normalizedDepth = normalizeNetworkVizHistoryDepth(historyDepth);
+  const normalizedTimeline = normalizeGenerationTimeline(timeline);
+  return normalizedTimeline.slice(Math.max(0, normalizedTimeline.length - normalizedDepth));
+}
+
+function trimVisualizationState(visualization = null, historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
+  if (!visualization || typeof visualization !== "object") {
+    return null;
+  }
+
+  return {
+    ...visualization,
+    history: trimVisualizationHistory(visualization.history, historyDepth),
+    generationTimeline: trimGenerationTimeline(visualization.generationTimeline, historyDepth),
+  };
 }
 
 function readFitnessSettings() {
@@ -823,7 +847,12 @@ function syncSelectedVisualizationFromTimeline(fallbackVisualization = null) {
         fallbackVisualization.generationLeader || fallbackVisualization.lineageBest,
       );
       state.networkVizData = fallbackSnapshot?.network
-        ? createNetworkVisualizationData(fallbackSnapshot, fallbackVisualization.history, Date.now(), 0)
+        ? createNetworkVisualizationData(
+            fallbackSnapshot,
+            trimVisualizationHistory(fallbackVisualization.history, state.networkVizHistoryDepth),
+            Date.now(),
+            0,
+          )
         : null;
     } catch (error) {
       console.warn("Не удалось восстановить fallback-визуализацию нейросети:", error);
@@ -838,8 +867,15 @@ function syncSelectedVisualizationFromTimeline(fallbackVisualization = null) {
 }
 
 function applyVisualizationPayload(payload = state.workerSaveData || state.savedPopulationData) {
-  const visualization = payload?.visualization || null;
-  state.generationTimeline = normalizeGenerationTimeline(visualization?.generationTimeline);
+  const historyDepth = normalizeNetworkVizHistoryDepth(payload?.config?.networkVizHistoryDepth ?? state.networkVizHistoryDepth);
+  const visualization = trimVisualizationState(payload?.visualization || null, historyDepth);
+
+  state.networkVizHistoryDepth = historyDepth;
+  if (ui.networkVizHistoryDepth) {
+    ui.networkVizHistoryDepth.value = String(historyDepth);
+  }
+
+  state.generationTimeline = trimGenerationTimeline(visualization?.generationTimeline, historyDepth);
   syncSelectedVisualizationFromTimeline(visualization);
 }
 
@@ -1287,7 +1323,8 @@ function normalizeGenerationTimeline(timeline = []) {
       return { generation, individuals };
     })
     .filter((entry) => entry.generation > 0 && entry.individuals.length > 0)
-    .sort((a, b) => a.generation - b.generation);
+    .sort((a, b) => a.generation - b.generation)
+    .slice(-NETWORK_VIZ_HISTORY_LIMIT);
 }
 
 function serializeGenerationTimeline(timeline = []) {
@@ -1686,6 +1723,13 @@ function applyLoadedPopulationPayload(payload) {
   state.generationFlowHitboxes = [];
   state.networkVizHistoryOffset = 0;
 
+  if (payload.visualization) {
+    payload.visualization = trimVisualizationState(
+      payload.visualization,
+      payload.config?.networkVizHistoryDepth ?? state.networkVizHistoryDepth,
+    );
+  }
+
   applyVisualizationPayload(payload);
 
   if (payload.config) {
@@ -1732,6 +1776,13 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
       }
     : null;
+
+  if (payload.visualization) {
+    payload.visualization = trimVisualizationState(
+      payload.visualization,
+      payload.config?.networkVizHistoryDepth ?? state.networkVizHistoryDepth,
+    );
+  }
 
   state.savedPopulationData = payload;
   state.workerSaveData = payload;
@@ -2313,15 +2364,15 @@ class EvolutionTrainer {
   }
 
   buildVisualizationHistoryForDisplay() {
-    return normalizeVisualizationHistory(this.lineageHistory);
+    return trimVisualizationHistory(this.lineageHistory, this.config?.networkVizHistoryDepth);
   }
 
   restoreVisualizationState(visualization = {}) {
     this.lineageBest = deserializeNetworkSnapshot(visualization.lineageBest);
     this.generationLeader = deserializeNetworkSnapshot(visualization.generationLeader);
-    this.lineageHistory = normalizeVisualizationHistory(visualization.history);
-    this.generationTimeline = normalizeGenerationTimeline(visualization.generationTimeline);
-    this.networkVizHistoryOffset = 0;
+    this.lineageHistory = trimVisualizationHistory(visualization.history, this.config?.networkVizHistoryDepth);
+    this.generationTimeline = trimGenerationTimeline(visualization.generationTimeline, this.config?.networkVizHistoryDepth);
+    this.networkVizHistoryOffset = normalizeNetworkVizHistoryOffset(this.networkVizHistoryOffset, Math.max(0, this.lineageHistory.length - 1));
     this.networkVizVersion = 0;
     this.cachedNetworkViz = null;
     this.markNetworkVisualizationDirty();
@@ -2648,11 +2699,14 @@ class EvolutionTrainer {
 
   updateNetworkVizHistoryDepth(historyDepth) {
     if (!this.config) {
-      return NETWORK_VIZ_HISTORY_LIMIT;
+      return DEFAULT_NETWORK_VIZ_HISTORY_DEPTH;
     }
 
     const normalized = normalizeNetworkVizHistoryDepth(historyDepth);
     this.config.networkVizHistoryDepth = normalized;
+    this.lineageHistory = trimVisualizationHistory(this.lineageHistory, normalized);
+    this.generationTimeline = trimGenerationTimeline(this.generationTimeline, normalized);
+    this.networkVizHistoryOffset = normalizeNetworkVizHistoryOffset(this.networkVizHistoryOffset, Math.max(0, this.lineageHistory.length - 1));
     this.markNetworkVisualizationDirty();
     return normalized;
   }
@@ -2736,6 +2790,7 @@ class EvolutionTrainer {
     this.generationLeader = leaderSnapshot
       ? { ...leaderSnapshot, network: leaderSnapshot.network.clone() }
       : null;
+    const historyDepth = normalizeNetworkVizHistoryDepth(this.config?.networkVizHistoryDepth);
     this.lineageHistory = [
       {
         generation: this.generation,
@@ -2745,8 +2800,8 @@ class EvolutionTrainer {
         createdBy: leaderRecord?.createdBy || "mutation",
       },
       ...normalizeVisualizationHistory(this.lineageHistory),
-    ].slice(0, NETWORK_VIZ_HISTORY_LIMIT);
-    this.generationTimeline = [...this.generationTimeline, generationEntry];
+    ].slice(0, historyDepth);
+    this.generationTimeline = [...this.generationTimeline, generationEntry].slice(-historyDepth);
     this.markNetworkVisualizationDirty();
 
     if (leaderSnapshot && (!this.bestEver || leaderSnapshot.fitness > this.bestEver.fitness)) {
@@ -3766,6 +3821,47 @@ ui.tournamentGames.addEventListener("change", () => {
 
   saveSettingsToLocalStorage();
   savePopulation();
+});
+
+ui.networkVizHistoryDepth?.addEventListener("change", () => {
+  const historyDepth = normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth.value);
+  ui.networkVizHistoryDepth.value = String(historyDepth);
+  state.networkVizHistoryDepth = historyDepth;
+  state.networkVizHistoryOffset = 0;
+
+  [state.savedPopulationData, state.workerSaveData].forEach((payload) => {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    payload.config = {
+      ...(payload.config || {}),
+      networkVizHistoryDepth: historyDepth,
+    };
+
+    if (payload.visualization) {
+      payload.visualization = trimVisualizationState(payload.visualization, historyDepth);
+    }
+  });
+
+  if (state.workerStatus?.running) {
+    postToWorker("updateConfig", { networkVizHistoryDepth: historyDepth, networkVizHistoryOffset: 0 });
+  } else if (state.trainer?.running) {
+    state.trainer.updateNetworkVizHistoryDepth(historyDepth);
+    state.networkVizData = state.trainer.getNetworkVisualizationData();
+  }
+
+  const visualizationPayload = state.workerSaveData || state.savedPopulationData;
+  if (visualizationPayload?.visualization) {
+    applyVisualizationPayload(visualizationPayload);
+  } else {
+    state.generationTimeline = trimGenerationTimeline(state.generationTimeline, historyDepth);
+    syncSelectedVisualizationFromTimeline();
+  }
+
+  saveSettingsToLocalStorage();
+  savePopulation();
+  addLog(`История визуализации ограничена последними ${historyDepth} поколениями.`);
 });
 
 [
