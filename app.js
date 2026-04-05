@@ -49,7 +49,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-3";
+const APP_ASSET_VERSION = "2026-04-05-4";
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -74,6 +74,7 @@ const ui = {
   speedMultiplier: document.getElementById("speedMultiplier"),
   mutationRate: document.getElementById("mutationRate"),
   mutationAmount: document.getElementById("mutationAmount"),
+  networkVizHistoryDepth: document.getElementById("networkVizHistoryDepth"),
   fitnessGoal: document.getElementById("fitnessGoal"),
   fitnessConceded: document.getElementById("fitnessConceded"),
   fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
@@ -140,6 +141,7 @@ const state = {
   networkVizVersionRendered: null,
   networkVizRenderWidth: 0,
   networkVizRenderHeight: 0,
+  networkVizHistoryDepth: NETWORK_VIZ_HISTORY_LIMIT,
 };
 
 let nextIndividualId = 0;
@@ -226,6 +228,7 @@ function handleWorkerMessage(event) {
       speedPreset: state.speedPreset,
       speedMultiplier: state.speedMultiplier,
       useMaxSpeed: state.useMaxSpeed,
+      networkVizHistoryDepth: state.networkVizHistoryDepth,
     });
     return;
   }
@@ -540,6 +543,10 @@ function normalizeMutationSettings(settings = {}) {
   };
 }
 
+function normalizeNetworkVizHistoryDepth(value) {
+  return clamp(Math.round(toFiniteNumber(value, NETWORK_VIZ_HISTORY_LIMIT)), 1, NETWORK_VIZ_HISTORY_LIMIT);
+}
+
 function readFitnessSettings() {
   return normalizeFitnessSettings({
     goalReward: readNumberInput(ui.fitnessGoal, FITNESS_SETTINGS_DEFAULTS.goalReward),
@@ -587,6 +594,41 @@ function applyLiveMutationSettings() {
   }
 
   return mutationSettings;
+}
+
+function applyLiveNetworkVizSettings() {
+  const historyDepth = normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth?.value);
+  state.networkVizHistoryDepth = historyDepth;
+  if (ui.networkVizHistoryDepth) {
+    ui.networkVizHistoryDepth.value = String(historyDepth);
+  }
+
+  postToWorker("updateConfig", { networkVizHistoryDepth: historyDepth });
+
+  if (state.trainer?.updateNetworkVizHistoryDepth) {
+    state.trainer.updateNetworkVizHistoryDepth(historyDepth);
+    state.networkVizData = state.trainer.getNetworkVisualizationData();
+  } else if (state.trainer?.config) {
+    state.trainer.config.networkVizHistoryDepth = historyDepth;
+  }
+
+  const saveSource = state.workerSaveData || state.savedPopulationData;
+  if (saveSource?.config) {
+    saveSource.config.networkVizHistoryDepth = historyDepth;
+    savePopulation(saveSource);
+  }
+
+  if (state.networkVizData) {
+    state.networkVizData = {
+      ...state.networkVizData,
+      historyDepth,
+      version: Date.now(),
+    };
+    state.networkVizVersionRendered = null;
+    drawNetworkVisualization(state.networkVizData);
+  }
+
+  return historyDepth;
 }
 
 function createEmptyFitnessBreakdown() {
@@ -659,6 +701,12 @@ function setControlsFromConfig(config) {
   const mutationSettings = normalizeMutationSettings(config.mutationSettings);
   ui.mutationRate.value = mutationSettings.rate.toFixed(2);
   ui.mutationAmount.value = mutationSettings.amount.toFixed(2);
+
+  const historyDepth = normalizeNetworkVizHistoryDepth(config.networkVizHistoryDepth);
+  state.networkVizHistoryDepth = historyDepth;
+  if (ui.networkVizHistoryDepth) {
+    ui.networkVizHistoryDepth.value = String(historyDepth);
+  }
 }
 
 function serializeNetwork(network) {
@@ -878,12 +926,13 @@ function pickVisibleIndices(totalCount, visibleCount) {
   return indices.sort((a, b) => a - b);
 }
 
-function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0) {
+function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0, historyDepth = NETWORK_VIZ_HISTORY_LIMIT) {
   const network = snapshot?.network;
   if (!network?.layerSizes?.length) {
     return null;
   }
 
+  const effectiveHistoryDepth = normalizeNetworkVizHistoryDepth(historyDepth);
   const history = normalizeVisualizationHistory(historyEntries);
   const ageMap = new Map();
   history.forEach((entry, age) => {
@@ -991,7 +1040,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     layerSizes,
     hiddenTotalCount: hiddenLayerSizes.reduce((sum, count) => sum + count, 0),
     hiddenShownCount: hiddenVisibleCounts.reduce((sum, count) => sum + count, 0),
-    historyDepth: history.length,
+    historyDepth: effectiveHistoryDepth,
     layers,
     connections,
   };
@@ -1084,6 +1133,7 @@ function buildSavePayloadFromTrainer(trainer) {
           populationSize: trainer.population.length,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
           mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
+          networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
         }
       : null,
     population: trainer.population.map((individual) => ({
@@ -1136,6 +1186,7 @@ function applyLoadedPopulationPayload(payload, options = {}) {
         visualizationSnapshot,
         payload.visualization.history,
         Number(payload.savedAt) || 0,
+        payload.config?.networkVizHistoryDepth,
       );
     } catch (error) {
       console.warn("Не удалось восстановить визуализацию нейросети из сохранения:", error);
@@ -1186,6 +1237,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         showFieldStripes: state.showFieldStripes,
         fitnessSettings: normalizeFitnessSettings(payload.config.fitnessSettings),
         mutationSettings: normalizeMutationSettings(payload.config.mutationSettings),
+        networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
       }
     : null;
 
@@ -1832,6 +1884,7 @@ class EvolutionTrainer {
         this.getDisplayedNetworkSnapshot(),
         this.buildVisualizationHistoryForDisplay(),
         this.networkVizVersion,
+        this.config?.networkVizHistoryDepth,
       );
     }
 
@@ -1845,6 +1898,7 @@ class EvolutionTrainer {
       tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
       mutationSettings: normalizeMutationSettings(config.mutationSettings),
+      networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(config.networkVizHistoryDepth),
     };
     this.bestEver = null;
     this.currentA = null;
@@ -1897,6 +1951,9 @@ class EvolutionTrainer {
         ...(fallbackConfig.mutationSettings || {}),
         ...((savedData.config && savedData.config.mutationSettings) || {}),
       }),
+      networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(
+        savedData.config?.networkVizHistoryDepth ?? fallbackConfig.networkVizHistoryDepth,
+      ),
     };
 
     this.config = mergedConfig;
@@ -2117,6 +2174,17 @@ class EvolutionTrainer {
     if (this.currentMatch) {
       this.currentMatch.setGoalWidth(normalized);
     }
+    return normalized;
+  }
+
+  updateNetworkVizHistoryDepth(historyDepth) {
+    if (!this.config) {
+      return NETWORK_VIZ_HISTORY_LIMIT;
+    }
+
+    const normalized = normalizeNetworkVizHistoryDepth(historyDepth);
+    this.config.networkVizHistoryDepth = normalized;
+    this.markNetworkVisualizationDirty();
     return normalized;
   }
 
@@ -2501,6 +2569,7 @@ function readConfig() {
     showFieldStripes: ui.showFieldStripesToggle.checked,
     fitnessSettings: readFitnessSettings(),
     mutationSettings: readMutationSettings(),
+    networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth?.value),
   };
 }
 
@@ -2713,19 +2782,24 @@ function colorToCss(color) {
   return `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
 }
 
-function getConnectionStyle(connection) {
+function getConnectionStyle(connection, historyDepth = NETWORK_VIZ_HISTORY_LIMIT) {
   const baseColor = { r: 135, g: 203, b: 255, a: 0.08 + Math.min(0.16, Math.abs(connection.weight || 0) * 0.05) };
   const recentColor = { r: 255, g: 98, b: 98, a: 0.88 };
   const olderColor = { r: 255, g: 176, b: 176, a: 0.46 };
+  const effectiveHistoryDepth = normalizeNetworkVizHistoryDepth(historyDepth);
 
-  if (connection.age === null || connection.age === undefined) {
+  if (
+    connection.age === null
+    || connection.age === undefined
+    || connection.age >= effectiveHistoryDepth
+  ) {
     return {
       strokeStyle: colorToCss(baseColor),
       lineWidth: 0.75 + Math.min(1.9, Math.abs(connection.weight || 0) * 0.3),
     };
   }
 
-  const freshness = 1 - clamp(connection.age / Math.max(1, NETWORK_VIZ_HISTORY_LIMIT - 1), 0, 1);
+  const freshness = 1 - clamp(connection.age / Math.max(1, effectiveHistoryDepth - 1), 0, 1);
   const tint = connection.age === 0 ? recentColor : olderColor;
   const mixed = mixColor(baseColor, tint, 0.25 + freshness * 0.75);
 
@@ -2776,10 +2850,11 @@ function drawNetworkVisualization(data = state.networkVizData) {
     return;
   }
 
+  const historyDepth = normalizeNetworkVizHistoryDepth(data.historyDepth ?? state.networkVizHistoryDepth);
   const shownHidden = data.hiddenShownCount === data.hiddenTotalCount
     ? `${data.hiddenTotalCount}`
     : `${data.hiddenShownCount}/${data.hiddenTotalCount}`;
-  ui.networkVizStatus.textContent = `Лучшая особь: #${data.bestId ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · краснее = свежее изменение`;
+  ui.networkVizStatus.textContent = `Лучшая особь: #${data.bestId ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · подсветка: ${historyDepth} покол.`;
 
   const left = 116 * ratio;
   const right = 92 * ratio;
@@ -2833,7 +2908,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
       continue;
     }
 
-    const style = getConnectionStyle(connection);
+    const style = getConnectionStyle(connection, historyDepth);
     viz.beginPath();
     viz.moveTo(source.x, source.y);
     viz.lineTo(target.x, target.y);
@@ -2899,7 +2974,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.textBaseline = "top";
   viz.fillStyle = "rgba(154, 177, 195, 0.9)";
   viz.font = `${Math.max(10, Math.round(11 * ratio))}px Inter, sans-serif`;
-  viz.fillText(`История изменений: ${Math.min(NETWORK_VIZ_HISTORY_LIMIT, data.historyDepth)} поколений`, width - 12 * ratio, 10 * ratio);
+  viz.fillText(`История изменений: ${historyDepth} поколений`, width - 12 * ratio, 10 * ratio);
 }
 
 function updateStats(frameTime = performance.now()) {
@@ -3077,6 +3152,11 @@ ui.sidebarToggle.addEventListener("click", () => {
     const mutationSettings = applyLiveMutationSettings();
     addLog(`Параметры мутации обновлены: вероятность ${mutationSettings.rate.toFixed(2)}, диапазон шума ${mutationSettings.amount.toFixed(2)}.`);
   });
+});
+
+ui.networkVizHistoryDepth?.addEventListener("change", () => {
+  const historyDepth = applyLiveNetworkVizSettings();
+  addLog(`Подсветка эволюции нейросети теперь показывает последние ${historyDepth} поколений.`);
 });
 
 ui.pitchStage.addEventListener("pointerdown", startPitchResize);

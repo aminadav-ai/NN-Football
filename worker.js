@@ -203,6 +203,10 @@ function normalizeMutationSettings(settings = {}) {
   };
 }
 
+function normalizeNetworkVizHistoryDepth(value) {
+  return clamp(Math.round(toFiniteNumber(value, NETWORK_VIZ_HISTORY_LIMIT)), 1, NETWORK_VIZ_HISTORY_LIMIT);
+}
+
 function createEmptyFitnessBreakdown() {
   return {
     goals: 0,
@@ -432,12 +436,13 @@ function pickVisibleIndices(totalCount, visibleCount) {
   return indices.sort((a, b) => a - b);
 }
 
-function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0) {
+function createNetworkVisualizationData(snapshot, historyEntries = [], version = 0, historyDepth = NETWORK_VIZ_HISTORY_LIMIT) {
   const network = snapshot?.network;
   if (!network?.layerSizes?.length) {
     return null;
   }
 
+  const effectiveHistoryDepth = normalizeNetworkVizHistoryDepth(historyDepth);
   const history = normalizeVisualizationHistory(historyEntries);
   const ageMap = new Map();
   history.forEach((entry, age) => {
@@ -545,7 +550,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     layerSizes,
     hiddenTotalCount: hiddenLayerSizes.reduce((sum, count) => sum + count, 0),
     hiddenShownCount: hiddenVisibleCounts.reduce((sum, count) => sum + count, 0),
-    historyDepth: history.length,
+    historyDepth: effectiveHistoryDepth,
     layers,
     connections,
   };
@@ -618,6 +623,7 @@ function createSavePayload() {
           populationSize: trainer.population.length,
           fitnessSettings: normalizeFitnessSettings(trainer.config.fitnessSettings),
           mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
+          networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
         }
       : null,
     population: trainer.population.map((individual) => ({
@@ -1544,6 +1550,7 @@ class EvolutionTrainer {
         this.getDisplayedNetworkSnapshot(),
         this.buildVisualizationHistoryForDisplay(),
         this.networkVizVersion,
+        this.config?.networkVizHistoryDepth,
       );
     }
 
@@ -1557,6 +1564,7 @@ class EvolutionTrainer {
       tournamentGames: normalizeTournamentGames(config.tournamentGames, config.populationSize),
       fitnessSettings: normalizeFitnessSettings(config.fitnessSettings),
       mutationSettings: normalizeMutationSettings(config.mutationSettings),
+      networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(config.networkVizHistoryDepth),
     };
     this.bestEver = null;
     this.currentA = null;
@@ -1609,6 +1617,9 @@ class EvolutionTrainer {
         ...(fallbackConfig.mutationSettings || {}),
         ...((savedData.config && savedData.config.mutationSettings) || {}),
       }),
+      networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(
+        savedData.config?.networkVizHistoryDepth ?? fallbackConfig.networkVizHistoryDepth,
+      ),
     };
 
     this.config = mergedConfig;
@@ -1829,6 +1840,17 @@ class EvolutionTrainer {
     if (this.currentMatch) {
       this.currentMatch.setGoalWidth(normalized);
     }
+    return normalized;
+  }
+
+  updateNetworkVizHistoryDepth(historyDepth) {
+    if (!this.config) {
+      return NETWORK_VIZ_HISTORY_LIMIT;
+    }
+
+    const normalized = normalizeNetworkVizHistoryDepth(historyDepth);
+    this.config.networkVizHistoryDepth = normalized;
+    this.markNetworkVisualizationDirty();
     return normalized;
   }
 
@@ -2191,6 +2213,9 @@ self.onmessage = (event) => {
           if (Object.hasOwn(payload, "mutationSettings")) {
             payload.mutationSettings = normalizeMutationSettings(payload.mutationSettings);
           }
+          if (Object.hasOwn(payload, "networkVizHistoryDepth")) {
+            payload.networkVizHistoryDepth = normalizeNetworkVizHistoryDepth(payload.networkVizHistoryDepth);
+          }
           if (runtime.trainer?.config) {
             Object.assign(runtime.trainer.config, payload);
             if (Object.hasOwn(payload, "goalWidth")) {
@@ -2201,6 +2226,10 @@ self.onmessage = (event) => {
             if (Object.hasOwn(payload, "tournamentGames")) {
               runtime.trainer.updateTournamentGames(payload.tournamentGames);
               runtime.currentRenderMatch = captureCurrentMatchState();
+              emitStatus(true);
+            }
+            if (Object.hasOwn(payload, "networkVizHistoryDepth")) {
+              runtime.trainer.updateNetworkVizHistoryDepth(payload.networkVizHistoryDepth);
               emitStatus(true);
             }
             emitSaveData(true);
