@@ -17,6 +17,7 @@ const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
+const MAX_ADDED_TIME_SECONDS = 60;
 const MATCH_RATE_WINDOW_MS = 10000;
 const MAX_TOURNAMENT_GAMES = 500;
 const FITNESS_SETTINGS_DEFAULTS = {
@@ -50,7 +51,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-3";
+const APP_ASSET_VERSION = "2026-04-06-4";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -1710,6 +1711,8 @@ function serializeMatchState(match, currentA, currentB) {
     individualBId: currentB?.id || null,
     time: match.time,
     duration: match.duration,
+    addedTimeMax: Math.max(0, Number(match.addedTimeMax) || MAX_ADDED_TIME_SECONDS),
+    inAddedTime: Boolean(match.inAddedTime),
     done: match.done,
     score: { ...match.score },
     teamFitness: { ...match.teamFitness },
@@ -2081,6 +2084,8 @@ class FootballMatch {
     this.onEvent = onEvent;
     this.time = 0;
     this.duration = 60;
+    this.addedTimeMax = MAX_ADDED_TIME_SECONDS;
+    this.inAddedTime = false;
     this.done = false;
     this.teamFitness = { A: 0, B: 0 };
     this.fitnessBreakdown = {
@@ -2109,10 +2114,23 @@ class FootballMatch {
 
   setDurationMinutes(matchMinutes) {
     this.duration = Math.max(60, clamp(Math.round(matchMinutes || 10), 1, 10) * 60);
+    this.addedTimeMax = MAX_ADDED_TIME_SECONDS;
 
-    if (this.time >= this.duration) {
+    if (this.time >= this.duration + this.addedTimeMax) {
       this.finish();
+    } else if (this.time >= this.duration) {
+      this.startAddedTime();
+    } else {
+      this.inAddedTime = false;
     }
+  }
+
+  startAddedTime() {
+    if (this.done || this.inAddedTime) return;
+    this.inAddedTime = true;
+    this.onEvent?.(
+      `Основное время истекло: матч ${this.individualA.id} vs ${this.individualB.id} переходит в дополнительную минуту до первого гола.`,
+    );
   }
 
   setGoalWidth(goalWidth) {
@@ -2184,6 +2202,9 @@ class FootballMatch {
     if (this.done) return;
 
     this.time += dt;
+    if (!this.inAddedTime && this.time >= this.duration) {
+      this.startAddedTime();
+    }
 
     for (const player of this.players) {
       this.controlPlayer(player, dt);
@@ -2200,7 +2221,7 @@ class FootballMatch {
     this.handlePlayerCollisions();
     this.updateBall(dt);
 
-    if (this.time >= this.duration) {
+    if (this.inAddedTime && this.time >= this.duration + this.addedTimeMax) {
       this.finish();
     }
   }
@@ -2361,6 +2382,7 @@ class FootballMatch {
   registerGoal(scoringTeam) {
     const concedingTeam = scoringTeam === "A" ? "B" : "A";
     const isOwnGoal = this.ball.lastTouchTeam === concedingTeam;
+    const endedInAddedTime = this.inAddedTime;
     this.score[scoringTeam] += 1;
     this.addFitness(scoringTeam, "goals", this.getFitnessSetting("goalReward"));
     this.addFitness(concedingTeam, "conceded", this.getFitnessSetting("concededPenalty"));
@@ -2370,8 +2392,13 @@ class FootballMatch {
     }
 
     this.onEvent?.(
-      `Гол: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — счёт ${this.score.A}:${this.score.B}`,
+      `Гол: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — счёт ${this.score.A}:${this.score.B}${endedInAddedTime ? " · матч завершён в дополнительное время" : ""}`,
     );
+
+    if (endedInAddedTime) {
+      this.finish();
+      return;
+    }
 
     this.resetAfterGoal();
   }
@@ -2656,6 +2683,8 @@ class EvolutionTrainer {
     match.setGoalWidth(savedMatch.goalWidth ?? this.config.goalWidth);
     match.time = Number(savedMatch.time) || 0;
     match.duration = Math.max(1, Number(savedMatch.duration) || match.duration);
+    match.addedTimeMax = Math.max(0, Number(savedMatch.addedTimeMax) || match.addedTimeMax || MAX_ADDED_TIME_SECONDS);
+    match.inAddedTime = Boolean(savedMatch.inAddedTime) || match.time > match.duration;
     match.done = Boolean(savedMatch.done);
     match.score = {
       A: Number(savedMatch.score?.A) || 0,
@@ -3349,8 +3378,13 @@ function drawMatch(match) {
   ctx.arc(match.ball.x * FIELD.pxPerMeter, match.ball.y * FIELD.pxPerMeter, match.ball.radius * FIELD.pxPerMeter, 0, Math.PI * 2);
   ctx.fill();
 
-  const totalSeconds = Math.max(1, Number(match.duration) || 1);
-  const progress = clamp(match.time / totalSeconds, 0, 1);
+  const regularSeconds = Math.max(1, Number(match.duration) || 1);
+  const addedTimeMax = Math.max(0, Number(match.addedTimeMax) || MAX_ADDED_TIME_SECONDS);
+  const addedTimeActive = Boolean(match.inAddedTime) || (Number(match.time) || 0) > regularSeconds;
+  const regularProgress = clamp((Number(match.time) || 0) / regularSeconds, 0, 1);
+  const addedProgress = addedTimeMax > 0
+    ? clamp(((Number(match.time) || 0) - regularSeconds) / addedTimeMax, 0, 1)
+    : 0;
 
   const overlayX = 14;
   const overlayY = 14;
@@ -3381,15 +3415,20 @@ function drawMatch(match) {
     const timeBoxY = overlayY;
     const timeBarX = timeBoxX + 4;
     const timeBarY = timeBoxY + 8;
-    const timeBarWidth = Math.max(18, timeBoxWidth - 8);
+    const baseTimeBarWidth = Math.max(18, timeBoxWidth - 8);
+    const extraTimeWidth = addedTimeActive && addedTimeMax > 0
+      ? Math.round(baseTimeBarWidth * (addedTimeMax / regularSeconds))
+      : 0;
+    const timeBarWidth = baseTimeBarWidth + extraTimeWidth;
+    const extendedTimeBoxWidth = timeBoxWidth + extraTimeWidth;
     const timeBarHeight = timeBoxHeight - 16;
-    const fillWidth = timeBarWidth * progress;
+    const fillWidth = baseTimeBarWidth * regularProgress + extraTimeWidth * addedProgress;
 
     ctx.fillStyle = "rgba(0,0,0,0.42)";
-    ctx.fillRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
+    ctx.fillRect(timeBoxX, timeBoxY, extendedTimeBoxWidth, timeBoxHeight);
     ctx.fillStyle = "rgba(255,255,255,0.12)";
     ctx.fillRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillStyle = addedTimeActive ? "rgba(255, 212, 92, 0.26)" : "rgba(255,255,255,0.18)";
     ctx.fillRect(timeBarX, timeBarY, fillWidth, timeBarHeight);
 
     ctx.save();
@@ -3405,6 +3444,16 @@ function drawMatch(match) {
       ctx.stroke();
     }
     ctx.restore();
+
+    if (extraTimeWidth > 0) {
+      const dividerX = timeBarX + baseTimeBarWidth;
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(dividerX, timeBarY - 1);
+      ctx.lineTo(dividerX, timeBarY + timeBarHeight + 1);
+      ctx.stroke();
+    }
 
     ctx.strokeStyle = "rgba(255,255,255,0.16)";
     ctx.lineWidth = 1;
