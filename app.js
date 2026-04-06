@@ -37,6 +37,8 @@ const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT = 2;
 const DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH = 1;
 const MAX_NETWORK_VIZ_HEATMAP_DEPTH = 1000000;
+const DEFAULT_NETWORK_VIZ_HEATMAP_RANGE = 10;
+const MAX_NETWORK_VIZ_HEATMAP_RANGE = 1000;
 const NETWORK_VIZ_CHANGE_HISTORY_LIMIT = 20;
 const NETWORK_VIZ_MODE_DIRECT = "direct";
 const NETWORK_VIZ_MODE_HEATMAP = "heatmap";
@@ -58,7 +60,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-11";
+const APP_ASSET_VERSION = "2026-04-06-12";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -83,6 +85,8 @@ const ui = {
   networkVizMode: document.getElementById("networkVizMode"),
   networkVizHeatmapDepthControl: document.getElementById("networkVizHeatmapDepthControl"),
   networkVizHeatmapDepth: document.getElementById("networkVizHeatmapDepth"),
+  networkVizHeatmapRangeControl: document.getElementById("networkVizHeatmapRangeControl"),
+  networkVizHeatmapRange: document.getElementById("networkVizHeatmapRange"),
   networkVizLegendText: document.getElementById("networkVizLegendText"),
   networkVizOlderBtn: document.getElementById("networkVizOlderBtn"),
   networkVizNewerBtn: document.getElementById("networkVizNewerBtn"),
@@ -177,6 +181,7 @@ const state = {
   networkVizData: null,
   networkVizMode: NETWORK_VIZ_MODE_DEFAULT,
   networkVizHeatmapDepth: DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH,
+  networkVizHeatmapRange: DEFAULT_NETWORK_VIZ_HEATMAP_RANGE,
   networkVizHeatmapDefaultGeneration: null,
   networkVizVersionRendered: null,
   networkVizRenderWidth: 0,
@@ -723,9 +728,25 @@ function normalizeNetworkVizHeatmapDepth(value) {
   return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH)), 1, MAX_NETWORK_VIZ_HEATMAP_DEPTH);
 }
 
+function normalizeNetworkVizHeatmapRange(value) {
+  return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HEATMAP_RANGE)), 0, MAX_NETWORK_VIZ_HEATMAP_RANGE);
+}
+
 function getDefaultNetworkVizHeatmapGeneration(generation) {
   const normalizedGeneration = Math.max(1, Math.floor(Number(generation) || 1));
   return Math.max(1, normalizedGeneration - 1);
+}
+
+function getNetworkVizHeatmapCountThreshold(maxCount, depth = state.networkVizHeatmapRange) {
+  const normalizedMaxCount = Math.max(0, Math.floor(Number(maxCount) || 0));
+  if (normalizedMaxCount <= 0) {
+    return NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT;
+  }
+
+  return Math.max(
+    NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT,
+    normalizedMaxCount - normalizeNetworkVizHeatmapRange(depth),
+  );
 }
 
 function syncNetworkVizHeatmapDefaultGeneration(data = state.networkVizData, options = {}) {
@@ -755,6 +776,9 @@ function updateNetworkVizToolbarVisibility() {
   if (ui.networkVizHeatmapDepthControl) {
     ui.networkVizHeatmapDepthControl.hidden = !isHeatmapMode;
   }
+  if (ui.networkVizHeatmapRangeControl) {
+    ui.networkVizHeatmapRangeControl.hidden = !isHeatmapMode;
+  }
 }
 
 function normalizeChangeGenerationHistory(history = [], fallbackGeneration = 1) {
@@ -765,11 +789,9 @@ function normalizeChangeGenerationHistory(history = [], fallbackGeneration = 1) 
       ? Array.from({ length: Math.min(NETWORK_VIZ_CHANGE_HISTORY_LIMIT, Math.floor(Number(history) || 0)) }, () => fallback)
       : [];
 
-  return [...new Set(
-    sourceHistory
-      .map((generation) => Math.max(1, Math.floor(Number(generation) || 0)))
-      .filter((generation) => generation > 0),
-  )]
+  return sourceHistory
+    .map((generation) => Math.max(1, Math.floor(Number(generation) || 0)))
+    .filter((generation) => generation > 0)
     .sort((left, right) => left - right)
     .slice(-NETWORK_VIZ_CHANGE_HISTORY_LIMIT);
 }
@@ -989,14 +1011,19 @@ function applyLiveMutationSettings() {
 function applyLiveNetworkVizSettings() {
   const mode = normalizeNetworkVizMode(ui.networkVizMode?.value);
   const heatmapDepth = normalizeNetworkVizHeatmapDepth(ui.networkVizHeatmapDepth?.value);
+  const heatmapRange = normalizeNetworkVizHeatmapRange(ui.networkVizHeatmapRange?.value);
   state.networkVizMode = mode;
   state.networkVizHeatmapDepth = heatmapDepth;
+  state.networkVizHeatmapRange = heatmapRange;
 
   if (ui.networkVizMode) {
     ui.networkVizMode.value = mode;
   }
   if (ui.networkVizHeatmapDepth) {
     ui.networkVizHeatmapDepth.value = String(heatmapDepth);
+  }
+  if (ui.networkVizHeatmapRange) {
+    ui.networkVizHeatmapRange.value = String(heatmapRange);
   }
   updateNetworkVizToolbarVisibility();
 
@@ -1009,15 +1036,21 @@ function applyLiveNetworkVizSettings() {
       ...(payload.config || {}),
       networkVizMode: mode,
       networkVizHeatmapDepth: heatmapDepth,
+      networkVizHeatmapRange: heatmapRange,
     };
   });
 
   if (state.trainer?.config) {
     state.trainer.config.networkVizMode = mode;
     state.trainer.config.networkVizHeatmapDepth = heatmapDepth;
+    state.trainer.config.networkVizHeatmapRange = heatmapRange;
   }
   if (state.worker) {
-    postToWorker("updateConfig", { networkVizMode: mode, networkVizHeatmapDepth: heatmapDepth });
+    postToWorker("updateConfig", {
+      networkVizMode: mode,
+      networkVizHeatmapDepth: heatmapDepth,
+      networkVizHeatmapRange: heatmapRange,
+    });
   }
 
   state.networkVizVersionRendered = null;
@@ -1027,7 +1060,7 @@ function applyLiveNetworkVizSettings() {
 
   saveSettingsToLocalStorage();
   savePopulation();
-  return { mode, heatmapDepth };
+  return { mode, heatmapDepth, heatmapRange };
 }
 
 function selectNetworkVizHistoryEntry(data, offset = 0) {
@@ -1539,6 +1572,10 @@ function setControlsFromConfig(config) {
   state.networkVizHeatmapDepth = normalizeNetworkVizHeatmapDepth(config.networkVizHeatmapDepth);
   if (ui.networkVizHeatmapDepth) {
     ui.networkVizHeatmapDepth.value = String(state.networkVizHeatmapDepth);
+  }
+  state.networkVizHeatmapRange = normalizeNetworkVizHeatmapRange(config.networkVizHeatmapRange);
+  if (ui.networkVizHeatmapRange) {
+    ui.networkVizHeatmapRange.value = String(state.networkVizHeatmapRange);
   }
   updateNetworkVizToolbarVisibility();
 
@@ -2131,6 +2168,7 @@ function buildSavePayloadFromTrainer(trainer) {
           networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
           networkVizMode: normalizeNetworkVizMode(trainer.config.networkVizMode),
           networkVizHeatmapDepth: normalizeNetworkVizHeatmapDepth(trainer.config.networkVizHeatmapDepth),
+          networkVizHeatmapRange: normalizeNetworkVizHeatmapRange(trainer.config.networkVizHeatmapRange),
           autoSaveHours: normalizeAutoSaveHours(trainer.config.autoSaveHours),
         }
       : null,
@@ -2232,6 +2270,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
         networkVizMode: normalizeNetworkVizMode(payload.config.networkVizMode ?? state.networkVizMode),
         networkVizHeatmapDepth: normalizeNetworkVizHeatmapDepth(payload.config.networkVizHeatmapDepth ?? state.networkVizHeatmapDepth),
+        networkVizHeatmapRange: normalizeNetworkVizHeatmapRange(payload.config.networkVizHeatmapRange ?? state.networkVizHeatmapRange),
         autoSaveHours: normalizeAutoSaveHours(payload.config.autoSaveHours ?? ui.autoSaveHours?.value),
       }
     : null;
@@ -3713,6 +3752,7 @@ function readConfig() {
     networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth?.value),
     networkVizMode: normalizeNetworkVizMode(ui.networkVizMode?.value),
     networkVizHeatmapDepth: normalizeNetworkVizHeatmapDepth(ui.networkVizHeatmapDepth?.value),
+    networkVizHeatmapRange: normalizeNetworkVizHeatmapRange(ui.networkVizHeatmapRange?.value),
     autoSaveHours: normalizeAutoSaveHours(ui.autoSaveHours?.value),
   };
 }
@@ -4110,26 +4150,29 @@ function drawNetworkVisualization(data = state.networkVizData) {
       || {},
     subjectGeneration || 1,
   );
+  const heatmapRange = normalizeNetworkVizHeatmapRange(state.networkVizHeatmapRange);
   const heatmapCounts = isHeatmapMode
     ? [
         ...data.connections.map((connection) => countChangesFromGeneration(activeChangeHistoryByKey[connection.key], heatmapDepth)),
         ...data.layers.flatMap((layer) => (layer.nodes || []).map((node) => countChangesFromGeneration(activeChangeHistoryByKey[node.biasKey], heatmapDepth))),
       ].filter((count) => count >= NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT)
     : [];
-  const heatmapShownCount = heatmapCounts.length;
   const heatmapMaxCount = heatmapCounts.reduce((max, count) => Math.max(max, count), 0);
+  const heatmapMinCount = getNetworkVizHeatmapCountThreshold(heatmapMaxCount, heatmapRange);
+  const heatmapShownCount = heatmapCounts.filter((count) => count >= heatmapMinCount).length;
   const changeNote = availableHistory > 0 && Number(data.activeChangedCount || 0) === 0
     ? " · новых отличий не найдено"
     : "";
+  const heatmapRangeText = heatmapShownCount > 0 ? `${heatmapMinCount}–${heatmapMaxCount}` : `менее ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}`;
   const heatmapNote = heatmapShownCount > 0
-    ? ` · теплокарта: ${heatmapShownCount} элементов, начиная с G${heatmapDepth}, максимум ${heatmapMaxCount}`
-    : ` · теплокарта: нет элементов с ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}+ изменениями начиная с G${heatmapDepth}`;
+    ? ` · теплокарта: ${heatmapShownCount} элементов, начиная с G${heatmapDepth}, глубина ${heatmapRange}, диапазон ${heatmapRangeText}`
+    : ` · теплокарта: нет элементов в диапазоне ${heatmapRangeText} начиная с G${heatmapDepth} при глубине ${heatmapRange}`;
   ui.networkVizStatus.textContent = isHeatmapMode
     ? `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden}${heatmapNote}`
     : `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · ${parentText}${changeNote}`;
   if (ui.networkVizLegendText) {
     ui.networkVizLegendText.innerHTML = isHeatmapMode
-      ? `<i class="legend-swatch legend-swatch-recent"></i>краснее = связь или bias чаще менялись у успешной линии; показано начиная с G${heatmapDepth}`
+      ? `<i class="legend-swatch legend-swatch-recent"></i>краснее = связь или bias чаще менялись у успешной линии; показан диапазон ${heatmapRangeText} начиная с G${heatmapDepth}`
       : '<i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)';
   }
 
@@ -4184,7 +4227,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
     }))
     .filter((connection) => {
       if (isHeatmapMode) {
-        return Number(connection.filteredChangeCount || 0) >= NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT;
+        return Number(connection.filteredChangeCount || 0) >= heatmapMinCount;
       }
       return connection.highlighted;
     })
@@ -4264,7 +4307,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
         {
           mode,
           maxHeatCount: heatmapMaxCount,
-          minVisibleCount: NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT,
+          minVisibleCount: heatmapMinCount,
           ratio,
         },
       );
@@ -4291,7 +4334,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.fillStyle = "rgba(154, 177, 195, 0.9)";
   viz.font = `${Math.max(10, Math.round(11 * ratio))}px Inter, sans-serif`;
   const historyLabel = isHeatmapMode
-    ? `Теплокарта · с G${heatmapDepth} · max ${heatmapMaxCount}`
+    ? `Теплокарта · с G${heatmapDepth} · D${heatmapRange} · max ${heatmapMaxCount}`
     : subjectGeneration
       ? `G${subjectGeneration} · #${data.bestId ?? "—"}`
       : "Выбор особи";
@@ -4662,17 +4705,22 @@ ui.networkVizHistoryDepth?.addEventListener("change", () => {
 });
 
 ui.networkVizMode?.addEventListener("change", () => {
-  const { mode, heatmapDepth } = applyLiveNetworkVizSettings();
+  const { mode, heatmapDepth, heatmapRange } = applyLiveNetworkVizSettings();
   addLog(
     mode === NETWORK_VIZ_MODE_HEATMAP
-      ? `Визуализация нейросети переключена на теплокарту. Показ начиная с поколения ${heatmapDepth}.`
+      ? `Визуализация нейросети переключена на теплокарту. Показ начиная с G${heatmapDepth}, глубина ${heatmapRange}.`
       : "Визуализация нейросети показывает отличия от непосредственного родителя.",
   );
 });
 
 ui.networkVizHeatmapDepth?.addEventListener("change", () => {
-  const { heatmapDepth } = applyLiveNetworkVizSettings();
-  addLog(`Теплокарта теперь показывает изменения начиная с поколения ${heatmapDepth}.`);
+  const { heatmapDepth, heatmapRange } = applyLiveNetworkVizSettings();
+  addLog(`Теплокарта теперь показывает изменения начиная с G${heatmapDepth} при глубине ${heatmapRange}.`);
+});
+
+ui.networkVizHeatmapRange?.addEventListener("change", () => {
+  const { heatmapDepth, heatmapRange } = applyLiveNetworkVizSettings();
+  addLog(`Глубина теплокарты обновлена: ${heatmapRange} (начиная с G${heatmapDepth}).`);
 });
 
 ui.autoSaveHours?.addEventListener("change", () => {

@@ -228,6 +228,10 @@
                 <span>Показывать с поколения</span>
                 <input id="networkVizHeatmapDepth" type="number" min="1" max="1000000" step="1" value="1" />
               </label>
+              <label class="network-viz-toolbar" id="networkVizHeatmapRangeControl" for="networkVizHeatmapRange" hidden>
+                <span>Глубина</span>
+                <input id="networkVizHeatmapRange" type="number" min="0" max="1000" step="1" value="10" />
+              </label>
             </div>
             <div class="network-viz-legend">
               <span id="networkVizLegendText"><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
@@ -237,6 +241,6 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=2026-04-06-11"></script>
+    <script type="module" src="./app.js?v=2026-04-06-12"></script>
   </body>
 </html>

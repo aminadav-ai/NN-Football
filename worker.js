@@ -228,11 +228,9 @@ function normalizeChangeGenerationHistory(history = [], fallbackGeneration = 1) 
       ? Array.from({ length: Math.min(20, Math.floor(Number(history) || 0)) }, () => fallback)
       : [];
 
-  return [...new Set(
-    sourceHistory
-      .map((generation) => Math.max(1, Math.floor(Number(generation) || 0)))
-      .filter((generation) => generation > 0),
-  )]
+  return sourceHistory
+    .map((generation) => Math.max(1, Math.floor(Number(generation) || 0)))
+    .filter((generation) => generation > 0)
     .sort((left, right) => left - right)
     .slice(-20);
 }
