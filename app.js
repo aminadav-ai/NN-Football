@@ -51,7 +51,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-5";
+const APP_ASSET_VERSION = "2026-04-06-6";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -107,6 +107,7 @@ const ui = {
   skipBtn: document.getElementById("skipBtn"),
   showTimeToggle: document.getElementById("showTimeToggle"),
   showFieldStripesToggle: document.getElementById("showFieldStripesToggle"),
+  showEvolutionVisualsToggle: document.getElementById("showEvolutionVisualsToggle"),
   fitnessPanels: document.getElementById("fitnessPanels"),
   fitnessHeaderA: document.getElementById("fitnessHeaderA"),
   fitnessHeaderB: document.getElementById("fitnessHeaderB"),
@@ -152,6 +153,7 @@ const state = {
   isPaused: false,
   showTimeIndicator: true,
   showFieldStripes: true,
+  showEvolutionVisuals: true,
   useWorkerRenderer: supportsOffscreenCanvas,
   offscreenTransferred: false,
   generationTimeline: [],
@@ -1003,6 +1005,10 @@ function selectGenerationTimelineIndividual(generation, individualId, options = 
 }
 
 function drawGenerationFlow() {
+  if (!state.showEvolutionVisuals) {
+    return;
+  }
+
   if (!ui.generationFlowCanvas || !generationFlowCtx) {
     return;
   }
@@ -1242,6 +1248,16 @@ function setControlsFromConfig(config) {
   state.showTimeIndicator = ui.showTimeToggle.checked;
   ui.showFieldStripesToggle.checked = config.showFieldStripes !== false;
   state.showFieldStripes = ui.showFieldStripesToggle.checked;
+  if (ui.showEvolutionVisualsToggle) {
+    ui.showEvolutionVisualsToggle.checked = config.showEvolutionVisuals !== false;
+  }
+  state.showEvolutionVisuals = config.showEvolutionVisuals !== false;
+  if (ui.generationFlowPanel) {
+    ui.generationFlowPanel.hidden = !state.showEvolutionVisuals;
+  }
+  if (ui.networkVizPanel) {
+    ui.networkVizPanel.hidden = !state.showEvolutionVisuals;
+  }
   applySpeedState({
     preset: config.speedPreset || (config.useMaxSpeed ? "max" : "fast"),
     multiplier: config.speedMultiplier ?? 1,
@@ -3269,6 +3285,7 @@ function readConfig() {
     useMaxSpeed: state.useMaxSpeed,
     showTimeIndicator: ui.showTimeToggle.checked,
     showFieldStripes: ui.showFieldStripesToggle.checked,
+    showEvolutionVisuals: ui.showEvolutionVisualsToggle?.checked !== false,
     fitnessSettings: readFitnessSettings(),
     crossoverRate: normalizeCrossoverRate(ui.crossoverRate?.value),
     mutationSettings: readMutationSettings(),
@@ -3521,6 +3538,10 @@ function getConnectionStyle() {
 }
 
 function drawNetworkVisualization(data = state.networkVizData) {
+  if (!state.showEvolutionVisuals) {
+    return;
+  }
+
   if (!ui.networkVizCanvas || !networkVizCtx) {
     return;
   }
@@ -3735,8 +3756,10 @@ function updateStats(frameTime = performance.now()) {
   if (!state.useWorkerRenderer) {
     drawMatch(displayMatch);
   }
-  drawGenerationFlow();
-  drawNetworkVisualization(state.networkVizData);
+  if (state.showEvolutionVisuals) {
+    drawGenerationFlow();
+    drawNetworkVisualization(state.networkVizData);
+  }
 }
 
 function tick(timestamp) {
@@ -3864,6 +3887,21 @@ ui.showFieldStripesToggle.addEventListener("change", () => {
   saveSettingsToLocalStorage();
   savePopulation();
   addLog(state.showFieldStripes ? "Полосы на поле включены." : "Полосы на поле скрыты.");
+});
+
+ui.showEvolutionVisualsToggle?.addEventListener("change", () => {
+  state.showEvolutionVisuals = ui.showEvolutionVisualsToggle.checked;
+  if (ui.generationFlowPanel) {
+    ui.generationFlowPanel.hidden = !state.showEvolutionVisuals;
+  }
+  if (ui.networkVizPanel) {
+    ui.networkVizPanel.hidden = !state.showEvolutionVisuals;
+  }
+  state.generationFlowVersionRendered = null;
+  state.networkVizVersionRendered = null;
+  saveSettingsToLocalStorage();
+  savePopulation();
+  addLog(state.showEvolutionVisuals ? "Визуализация поколений и нейросети включена." : "Визуализация поколений и нейросети отключена.");
 });
 
 ui.sidebarToggle.addEventListener("click", () => {
