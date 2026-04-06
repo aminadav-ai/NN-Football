@@ -446,12 +446,14 @@ button.max-btn {
 }
 
 .fitness-panels {
+  grid-area: fitness;
   width: 280px;
   min-width: 280px;
   max-width: 280px;
   display: grid;
   gap: 14px;
   align-self: start;
+  justify-self: start;
   flex: 0 0 280px;
 }
 
