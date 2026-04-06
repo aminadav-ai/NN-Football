@@ -50,9 +50,8 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-1";
+const APP_ASSET_VERSION = "2026-04-06-3";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
-const AUTOSAVE_STORAGE_KEY = "flower-3.autosave.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
@@ -239,20 +238,6 @@ function formatAutoSaveHours(value) {
     : normalized.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
 }
 
-function saveAutoSaveToLocalStorage(payload) {
-  if (typeof localStorage === "undefined" || !payload?.population?.length) {
-    return false;
-  }
-
-  try {
-    localStorage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(payload));
-    return true;
-  } catch (error) {
-    console.warn("Не удалось сохранить автосохранение в localStorage:", error);
-    return false;
-  }
-}
-
 function scheduleAutoSave() {
   if (state.autoSaveTimerId) {
     clearTimeout(state.autoSaveTimerId);
@@ -279,16 +264,21 @@ async function runAutoSave() {
 
   state.autoSaveInProgress = true;
   try {
-    const payload = await requestLatestSaveData(2500);
+    let payload = state.workerSaveData || state.savedPopulationData || null;
+
+    if (state.workerStatus?.running || state.trainer?.running) {
+      payload = await requestLatestSaveData(2500);
+    }
+
     if (!payload?.population?.length) {
       return false;
     }
 
-    const savedToBrowser = saveAutoSaveToLocalStorage(payload);
-    const fileName = exportPopulationToFile(payload);
-    if (fileName || savedToBrowser) {
+    savePopulation(payload);
+    const fileName = exportPopulationToFile(state.savedPopulationData || payload);
+    if (fileName) {
       state.lastAutoSaveAt = Date.now();
-      updateSaveStatus(payload);
+      updateSaveStatus(state.savedPopulationData || payload);
       return true;
     }
   } catch (error) {
@@ -1750,9 +1740,6 @@ function serializeMatchState(match, currentA, currentB) {
 }
 
 function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = "") {
-  if (ui.loadBtn) {
-    ui.loadBtn.disabled = true;
-  }
   if (ui.saveFileBtn) {
     ui.saveFileBtn.disabled = !savedData && !state.workerSaveData?.population?.length && !state.trainer?.population?.length;
   }
@@ -1769,7 +1756,7 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   }
 
   if (state.autoSaveHours > 0) {
-    const autoSaveText = `Автосохранение каждые ${formatAutoSaveHours(state.autoSaveHours)} ч`;
+    const autoSaveText = `Автосохранение в файл каждые ${formatAutoSaveHours(state.autoSaveHours)} ч`;
     const lastSavedText = state.lastAutoSaveAt
       ? ` · последнее ${new Date(state.lastAutoSaveAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
       : " · ожидание первого автосохранения";
@@ -1779,8 +1766,8 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   }
 
   ui.saveStatus.textContent = savedData
-    ? "Автосохранение выключено · состояние готово к сохранению в файл."
-    : "Автосохранение выключено.";
+    ? "Автосохранение в файл выключено · состояние готово к сохранению в файл."
+    : "Автосохранение в файл выключено.";
   ui.saveStatus.classList.add("ready");
 }
 
