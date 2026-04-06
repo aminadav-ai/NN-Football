@@ -178,60 +178,62 @@
           </section>
         </div>
 
-        <section class="generation-flow-card" id="generationFlowPanel" aria-label="Визуализация смены особей по поколениям">
-          <div class="generation-flow-header">
-            <div>
-              <h2>Смена особей по поколениям</h2>
-              <p id="generationFlowStatus" class="generation-flow-status">История поколений появится после завершения первых матчей.</p>
+        <div class="visualization-panels-row">
+          <section class="generation-flow-card" id="generationFlowPanel" aria-label="Визуализация смены особей по поколениям">
+            <div class="generation-flow-header">
+              <div>
+                <h2>Смена особей по поколениям</h2>
+                <p id="generationFlowStatus" class="generation-flow-status">История поколений появится после завершения первых матчей.</p>
+              </div>
             </div>
-          </div>
-          <div class="generation-flow-scroll" id="generationFlowScroll">
-            <canvas
-              id="generationFlowCanvas"
-              class="generation-flow-canvas"
-              width="1100"
-              height="280"
-              aria-label="Схема поколений и переходов особей"
-            ></canvas>
-          </div>
-          <div class="generation-flow-legend">
-            <span><i class="legend-swatch legend-swatch-base"></i>перенесённая особь</span>
-            <span><i class="legend-swatch legend-swatch-recent"></i>выбранная особь</span>
-            <span>• внутри кружка = мутант</span>
-          </div>
-        </section>
+            <div class="generation-flow-scroll" id="generationFlowScroll">
+              <canvas
+                id="generationFlowCanvas"
+                class="generation-flow-canvas"
+                width="1100"
+                height="280"
+                aria-label="Схема поколений и переходов особей"
+              ></canvas>
+            </div>
+            <div class="generation-flow-legend">
+              <span><i class="legend-swatch legend-swatch-base"></i>перенесённая особь</span>
+              <span><i class="legend-swatch legend-swatch-recent"></i>выбранная особь</span>
+              <span>• внутри кружка = мутант</span>
+            </div>
+          </section>
 
-        <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
-          <div class="network-viz-header">
-            <div>
-              <h2>Эволюция нейросети</h2>
-              <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
+          <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
+            <div class="network-viz-header">
+              <div>
+                <h2>Эволюция нейросети</h2>
+                <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
+              </div>
             </div>
-          </div>
-          <canvas
-            id="networkVizCanvas"
-            class="network-viz-canvas"
-            width="1100"
-            height="420"
-            aria-label="Схема нейросети и изменений её связей"
-          ></canvas>
-          <div class="network-viz-toolbar-row">
-            <label class="network-viz-toolbar" for="networkVizMode">
-              <span>Режим визуализации</span>
-              <select id="networkVizMode" aria-label="Режим визуализации нейросети">
-                <option value="direct">Отличия от родителя</option>
-                <option value="heatmap">Тепловая карта изменений</option>
-              </select>
-            </label>
-            <label class="network-viz-toolbar" id="networkVizHeatmapDepthControl" for="networkVizHeatmapDepth" hidden>
-              <span>Глубина теплокарты</span>
-              <input id="networkVizHeatmapDepth" type="number" min="0" max="1000" step="1" value="10" />
-            </label>
-          </div>
-          <div class="network-viz-legend">
-            <span id="networkVizLegendText"><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
-          </div>
-        </section>
+            <canvas
+              id="networkVizCanvas"
+              class="network-viz-canvas"
+              width="1100"
+              height="420"
+              aria-label="Схема нейросети и изменений её связей"
+            ></canvas>
+            <div class="network-viz-toolbar-row">
+              <label class="network-viz-toolbar" for="networkVizMode">
+                <span>Режим визуализации</span>
+                <select id="networkVizMode" aria-label="Режим визуализации нейросети">
+                  <option value="direct">Отличия от родителя</option>
+                  <option value="heatmap">Тепловая карта изменений</option>
+                </select>
+              </label>
+              <label class="network-viz-toolbar" id="networkVizHeatmapDepthControl" for="networkVizHeatmapDepth" hidden>
+                <span>Глубина теплокарты</span>
+                <input id="networkVizHeatmapDepth" type="number" min="0" max="1000" step="1" value="10" />
+              </label>
+            </div>
+            <div class="network-viz-legend">
+              <span id="networkVizLegendText"><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
 

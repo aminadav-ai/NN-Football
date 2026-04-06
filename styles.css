@@ -278,9 +278,18 @@ button.max-btn {
   gap: 10px;
 }
 
+.visualization-panels-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  gap: 16px;
+  align-items: start;
+  width: min(1170px, calc(100vw - 32px));
+  max-width: 100%;
+}
+
 .generation-flow-card,
 .network-viz-card {
-  width: min(1170px, calc(100vw - 32px));
+  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.04);
@@ -288,6 +297,14 @@ button.max-btn {
   padding: 12px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   overflow: hidden;
+}
+
+.generation-flow-card {
+  min-width: 0;
+}
+
+.network-viz-card {
+  min-width: 0;
 }
 
 .generation-flow-header {
@@ -594,6 +611,13 @@ canvas {
     min-width: 0;
     max-width: 320px;
     flex-basis: auto;
+  }
+
+  .visualization-panels-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: min(100%, calc(100vw - 32px));
   }
 
   .generation-flow-card,
