@@ -50,7 +50,11 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-05-11";
+const APP_ASSET_VERSION = "2026-04-06-1";
+const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
+const AUTOSAVE_STORAGE_KEY = "flower-3.autosave.v1";
+const MAX_AUTOSAVE_HOURS = 168;
+const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
 const TEAM_COLORS = {
   A: "#61a8ff",
@@ -84,6 +88,7 @@ const ui = {
   mutationRate: document.getElementById("mutationRate"),
   mutationAmount: document.getElementById("mutationAmount"),
   networkVizHistoryDepth: document.getElementById("networkVizHistoryDepth"),
+  autoSaveHours: document.getElementById("autoSaveHours"),
   fitnessGoal: document.getElementById("fitnessGoal"),
   fitnessConceded: document.getElementById("fitnessConceded"),
   fitnessOwnGoal: document.getElementById("fitnessOwnGoal"),
@@ -162,6 +167,10 @@ const state = {
   networkVizRenderHeight: 0,
   networkVizHistoryDepth: DEFAULT_NETWORK_VIZ_HISTORY_DEPTH,
   networkVizHistoryOffset: 0,
+  autoSaveHours: 0,
+  autoSaveTimerId: null,
+  autoSaveInProgress: false,
+  lastAutoSaveAt: 0,
 };
 
 let nextIndividualId = 0;
@@ -216,6 +225,101 @@ function addLog(_message) {
 
 function clearLogs() {
   logs.length = 0;
+}
+
+function normalizeAutoSaveHours(value) {
+  const normalized = toFiniteNumber(value, 0);
+  return clamp(Math.round(normalized * 100) / 100, 0, MAX_AUTOSAVE_HOURS);
+}
+
+function formatAutoSaveHours(value) {
+  const normalized = normalizeAutoSaveHours(value);
+  return Number.isInteger(normalized)
+    ? String(normalized)
+    : normalized.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+}
+
+function saveAutoSaveToLocalStorage(payload) {
+  if (typeof localStorage === "undefined" || !payload?.population?.length) {
+    return false;
+  }
+
+  try {
+    localStorage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch (error) {
+    console.warn("Не удалось сохранить автосохранение в localStorage:", error);
+    return false;
+  }
+}
+
+function scheduleAutoSave() {
+  if (state.autoSaveTimerId) {
+    clearTimeout(state.autoSaveTimerId);
+    state.autoSaveTimerId = null;
+  }
+
+  const hours = normalizeAutoSaveHours(state.autoSaveHours);
+  if (hours <= 0) {
+    updateSaveStatus();
+    return;
+  }
+
+  const intervalMs = Math.max(MIN_AUTOSAVE_INTERVAL_MS, Math.round(hours * 60 * 60 * 1000));
+  state.autoSaveTimerId = window.setTimeout(() => {
+    void runAutoSave();
+  }, intervalMs);
+  updateSaveStatus();
+}
+
+async function runAutoSave() {
+  if (state.autoSaveInProgress) {
+    return false;
+  }
+
+  state.autoSaveInProgress = true;
+  try {
+    const payload = await requestLatestSaveData(2500);
+    if (!payload?.population?.length) {
+      return false;
+    }
+
+    const savedToBrowser = saveAutoSaveToLocalStorage(payload);
+    const fileName = exportPopulationToFile(payload);
+    if (fileName || savedToBrowser) {
+      state.lastAutoSaveAt = Date.now();
+      updateSaveStatus(payload);
+      return true;
+    }
+  } catch (error) {
+    console.error("Не удалось выполнить автосохранение:", error);
+  } finally {
+    state.autoSaveInProgress = false;
+    scheduleAutoSave();
+  }
+
+  return false;
+}
+
+function applyAutoSaveSettings(hours, options = {}) {
+  const normalized = normalizeAutoSaveHours(hours);
+  state.autoSaveHours = normalized;
+
+  if (ui.autoSaveHours) {
+    ui.autoSaveHours.value = formatAutoSaveHours(normalized);
+  }
+
+  if (options.notifyWorker && state.worker) {
+    postToWorker("updateConfig", { autoSaveHours: normalized });
+  }
+
+  if (options.persist) {
+    saveSettingsToLocalStorage();
+    savePopulation();
+  }
+
+  scheduleAutoSave();
+  return normalized;
 }
 
 function saveSettingsToLocalStorage(config = readConfig()) {
@@ -1173,6 +1277,8 @@ function setControlsFromConfig(config) {
   if (ui.networkVizHistoryDepth) {
     ui.networkVizHistoryDepth.value = String(historyDepth);
   }
+
+  applyAutoSaveSettings(config.autoSaveHours, { persist: false, notifyWorker: false });
 }
 
 function serializeNetwork(network) {
@@ -1655,10 +1761,27 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   }
 
   ui.saveStatus.classList.remove("ready", "error");
-  ui.saveStatus.textContent = errorMessage || "";
+
   if (errorMessage) {
+    ui.saveStatus.textContent = errorMessage;
     ui.saveStatus.classList.add("error");
+    return;
   }
+
+  if (state.autoSaveHours > 0) {
+    const autoSaveText = `Автосохранение каждые ${formatAutoSaveHours(state.autoSaveHours)} ч`;
+    const lastSavedText = state.lastAutoSaveAt
+      ? ` · последнее ${new Date(state.lastAutoSaveAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
+      : " · ожидание первого автосохранения";
+    ui.saveStatus.textContent = `${autoSaveText}${lastSavedText}`;
+    ui.saveStatus.classList.add("ready");
+    return;
+  }
+
+  ui.saveStatus.textContent = savedData
+    ? "Автосохранение выключено · состояние готово к сохранению в файл."
+    : "Автосохранение выключено.";
+  ui.saveStatus.classList.add("ready");
 }
 
 function buildSavePayloadFromTrainer(trainer) {
@@ -1682,6 +1805,7 @@ function buildSavePayloadFromTrainer(trainer) {
           crossoverRate: normalizeCrossoverRate(trainer.config.crossoverRate),
           mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
           networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
+          autoSaveHours: normalizeAutoSaveHours(trainer.config.autoSaveHours),
         }
       : null,
     population: trainer.population.map((individual) => ({
@@ -1778,6 +1902,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         crossoverRate: normalizeCrossoverRate(payload.config.crossoverRate),
         mutationSettings: normalizeMutationSettings(payload.config.mutationSettings),
         networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
+        autoSaveHours: normalizeAutoSaveHours(payload.config.autoSaveHours ?? ui.autoSaveHours?.value),
       }
     : null;
 
@@ -3132,6 +3257,7 @@ function readConfig() {
     crossoverRate: normalizeCrossoverRate(ui.crossoverRate?.value),
     mutationSettings: readMutationSettings(),
     networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth?.value),
+    autoSaveHours: normalizeAutoSaveHours(ui.autoSaveHours?.value),
   };
 }
 
@@ -3859,6 +3985,15 @@ ui.networkVizHistoryDepth?.addEventListener("change", () => {
   saveSettingsToLocalStorage();
   savePopulation();
   addLog(`История визуализации ограничена последними ${historyDepth} поколениями.`);
+});
+
+ui.autoSaveHours?.addEventListener("change", () => {
+  const autoSaveHours = applyAutoSaveSettings(ui.autoSaveHours.value, { persist: true, notifyWorker: true });
+  addLog(
+    autoSaveHours > 0
+      ? `Автосохранение включено: каждые ${formatAutoSaveHours(autoSaveHours)} ч.`
+      : "Автосохранение выключено.",
+  );
 });
 
 [
