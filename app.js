@@ -35,8 +35,9 @@ const DEFAULT_NETWORK_VIZ_HISTORY_DEPTH = 30;
 const NETWORK_VIZ_HISTORY_LIMIT = 100;
 const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT = 2;
-const DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH = 10;
-const MAX_NETWORK_VIZ_HEATMAP_DEPTH = 1000;
+const DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH = 1;
+const MAX_NETWORK_VIZ_HEATMAP_DEPTH = 1000000;
+const NETWORK_VIZ_CHANGE_HISTORY_LIMIT = 20;
 const NETWORK_VIZ_MODE_DIRECT = "direct";
 const NETWORK_VIZ_MODE_HEATMAP = "heatmap";
 const NETWORK_VIZ_MODE_DEFAULT = NETWORK_VIZ_MODE_DIRECT;
@@ -57,7 +58,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-10";
+const APP_ASSET_VERSION = "2026-04-06-11";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -176,6 +177,7 @@ const state = {
   networkVizData: null,
   networkVizMode: NETWORK_VIZ_MODE_DEFAULT,
   networkVizHeatmapDepth: DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH,
+  networkVizHeatmapDefaultGeneration: null,
   networkVizVersionRendered: null,
   networkVizRenderWidth: 0,
   networkVizRenderHeight: 0,
@@ -718,19 +720,34 @@ function normalizeNetworkVizMode(value) {
 }
 
 function normalizeNetworkVizHeatmapDepth(value) {
-  return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH)), 0, MAX_NETWORK_VIZ_HEATMAP_DEPTH);
+  return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH)), 1, MAX_NETWORK_VIZ_HEATMAP_DEPTH);
 }
 
-function getNetworkVizHeatmapThreshold(maxHeatCount, depth = state.networkVizHeatmapDepth) {
-  const maxCount = Math.max(0, Math.floor(Number(maxHeatCount) || 0));
-  if (maxCount <= 0) {
-    return NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT;
+function getDefaultNetworkVizHeatmapGeneration(generation) {
+  const normalizedGeneration = Math.max(1, Math.floor(Number(generation) || 1));
+  return Math.max(1, normalizedGeneration - 1);
+}
+
+function syncNetworkVizHeatmapDefaultGeneration(data = state.networkVizData, options = {}) {
+  const activeGeneration = Number.isFinite(data?.generation)
+    ? Math.max(1, Math.floor(Number(data.generation) || 1))
+    : Number.isFinite(data?.activeHistoryGeneration)
+      ? Math.max(1, Math.floor(Number(data.activeHistoryGeneration) || 1))
+      : null;
+
+  if (!activeGeneration) {
+    return state.networkVizHeatmapDepth;
   }
 
-  return Math.max(
-    NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT,
-    maxCount - normalizeNetworkVizHeatmapDepth(depth),
-  );
+  if (options.force || state.networkVizHeatmapDefaultGeneration !== activeGeneration) {
+    state.networkVizHeatmapDefaultGeneration = activeGeneration;
+    state.networkVizHeatmapDepth = getDefaultNetworkVizHeatmapGeneration(activeGeneration);
+    if (ui.networkVizHeatmapDepth) {
+      ui.networkVizHeatmapDepth.value = String(state.networkVizHeatmapDepth);
+    }
+  }
+
+  return state.networkVizHeatmapDepth;
 }
 
 function updateNetworkVizToolbarVisibility() {
@@ -740,7 +757,24 @@ function updateNetworkVizToolbarVisibility() {
   }
 }
 
-function normalizeConnectionChangeCounts(counts = {}) {
+function normalizeChangeGenerationHistory(history = [], fallbackGeneration = 1) {
+  const fallback = Math.max(1, Math.floor(Number(fallbackGeneration) || 1));
+  const sourceHistory = Array.isArray(history)
+    ? history
+    : Number.isFinite(Number(history)) && Number(history) > 0
+      ? Array.from({ length: Math.min(NETWORK_VIZ_CHANGE_HISTORY_LIMIT, Math.floor(Number(history) || 0)) }, () => fallback)
+      : [];
+
+  return [...new Set(
+    sourceHistory
+      .map((generation) => Math.max(1, Math.floor(Number(generation) || 0)))
+      .filter((generation) => generation > 0),
+  )]
+    .sort((left, right) => left - right)
+    .slice(-NETWORK_VIZ_CHANGE_HISTORY_LIMIT);
+}
+
+function normalizeConnectionChangeCounts(counts = {}, fallbackGeneration = 1) {
   if (!counts || typeof counts !== "object") {
     return {};
   }
@@ -751,17 +785,29 @@ function normalizeConnectionChangeCounts(counts = {}) {
       continue;
     }
 
-    const count = Math.max(0, Math.floor(Number(value) || 0));
-    if (count > 0) {
-      normalized[key] = count;
+    const history = normalizeChangeGenerationHistory(value, fallbackGeneration);
+    if (history.length > 0) {
+      normalized[key] = history;
     }
   }
 
   return normalized;
 }
 
-function cloneConnectionChangeCounts(counts = {}) {
-  return { ...normalizeConnectionChangeCounts(counts) };
+function cloneConnectionChangeCounts(counts = {}, fallbackGeneration = 1) {
+  const normalized = normalizeConnectionChangeCounts(counts, fallbackGeneration);
+  return Object.fromEntries(
+    Object.entries(normalized).map(([key, history]) => [key, [...history]]),
+  );
+}
+
+function mergeConnectionChangeHistory(...histories) {
+  return normalizeChangeGenerationHistory(histories.flatMap((history) => normalizeChangeGenerationHistory(history)));
+}
+
+function countChangesFromGeneration(history = [], sinceGeneration = 1) {
+  const normalizedSinceGeneration = normalizeNetworkVizHeatmapDepth(sinceGeneration);
+  return normalizeChangeGenerationHistory(history).filter((generation) => generation >= normalizedSinceGeneration).length;
 }
 
 function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, parentACounts = {}, parentBNetwork = null, parentBCounts = {}) {
@@ -782,24 +828,21 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
         const childValue = row[columnIndex];
         const parentAValue = parentANetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
         const parentBValue = parentBNetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
-        const countA = countsA[key] || 0;
-        const countB = countsB[key] || 0;
+        const historyA = countsA[key] || [];
+        const historyB = countsB[key] || [];
         const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
         const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
 
-        let inheritedCount = 0;
-        if (matchesA && matchesB) {
-          inheritedCount = Math.max(countA, countB);
-        } else if (matchesA) {
-          inheritedCount = countA;
-        } else if (matchesB) {
-          inheritedCount = countB;
-        } else {
-          inheritedCount = Math.max(countA, countB);
-        }
+        const inheritedHistory = matchesA && matchesB
+          ? mergeConnectionChangeHistory(historyA, historyB)
+          : matchesA
+            ? [...historyA]
+            : matchesB
+              ? [...historyB]
+              : mergeConnectionChangeHistory(historyA, historyB);
 
-        if (inheritedCount > 0) {
-          inherited[key] = inheritedCount;
+        if (inheritedHistory.length > 0) {
+          inherited[key] = inheritedHistory;
         }
       }
     }
@@ -812,24 +855,21 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
       const childValue = layer[neuronIndex];
       const parentAValue = parentANetwork?.biases?.[layerIndex]?.[neuronIndex];
       const parentBValue = parentBNetwork?.biases?.[layerIndex]?.[neuronIndex];
-      const countA = countsA[key] || 0;
-      const countB = countsB[key] || 0;
+      const historyA = countsA[key] || [];
+      const historyB = countsB[key] || [];
       const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
       const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
 
-      let inheritedCount = 0;
-      if (matchesA && matchesB) {
-        inheritedCount = Math.max(countA, countB);
-      } else if (matchesA) {
-        inheritedCount = countA;
-      } else if (matchesB) {
-        inheritedCount = countB;
-      } else {
-        inheritedCount = Math.max(countA, countB);
-      }
+      const inheritedHistory = matchesA && matchesB
+        ? mergeConnectionChangeHistory(historyA, historyB)
+        : matchesA
+          ? [...historyA]
+          : matchesB
+            ? [...historyB]
+            : mergeConnectionChangeHistory(historyA, historyB);
 
-      if (inheritedCount > 0) {
-        inherited[key] = inheritedCount;
+      if (inheritedHistory.length > 0) {
+        inherited[key] = inheritedHistory;
       }
     }
   }
@@ -837,13 +877,15 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
   return inherited;
 }
 
-function incrementConnectionChangeCounts(baseCounts = {}, changedConnections = []) {
-  const nextCounts = cloneConnectionChangeCounts(baseCounts);
+function incrementConnectionChangeCounts(baseCounts = {}, changedConnections = [], generation = 1) {
+  const nextCounts = cloneConnectionChangeCounts(baseCounts, generation);
+  const normalizedGeneration = Math.max(1, Math.floor(Number(generation) || 1));
+
   for (const key of changedConnections) {
     if (typeof key !== "string" || !key) {
       continue;
     }
-    nextCounts[key] = (nextCounts[key] || 0) + 1;
+    nextCounts[key] = mergeConnectionChangeHistory(nextCounts[key] || [], [normalizedGeneration]);
   }
   return nextCounts;
 }
@@ -1133,6 +1175,7 @@ function syncSelectedVisualizationFromTimeline(fallbackVisualization = null) {
     state.selectedVisualizationGeneration = selected.generation;
     state.selectedVisualizationIndividualId = selected.id;
     state.networkVizData = buildNetworkVisualizationForIndividual(selected);
+    syncNetworkVizHeatmapDefaultGeneration(state.networkVizData);
   } else if (fallbackVisualization) {
     try {
       const fallbackSnapshot = deserializeNetworkSnapshot(
@@ -1146,6 +1189,7 @@ function syncSelectedVisualizationFromTimeline(fallbackVisualization = null) {
             0,
           )
         : null;
+      syncNetworkVizHeatmapDefaultGeneration(state.networkVizData);
     } catch (error) {
       console.warn("Не удалось восстановить fallback-визуализацию нейросети:", error);
       state.networkVizData = null;
@@ -1860,8 +1904,10 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     activeSnapshot?.connectionChangeCounts
       || activeHistoryEntry?.snapshot?.connectionChangeCounts
       || snapshot?.connectionChangeCounts,
+    activeSnapshot?.generation || snapshot?.generation || 1,
   );
   const visibleHeatCounts = Object.values(activeConnectionChangeCounts)
+    .map((history) => history.length)
     .filter((count) => count >= NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT);
   const maxHeatCount = visibleHeatCounts.reduce((max, count) => Math.max(max, count), 0);
   const visibleHeatCount = visibleHeatCounts.length;
@@ -1926,7 +1972,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
           : String(actualIndex + 1),
         biasKey,
         highlighted: activeConnections.has(biasKey),
-        changeCount: activeConnectionChangeCounts[biasKey] || 0,
+        changeCount: (activeConnectionChangeCounts[biasKey] || []).length,
       };
     });
 
@@ -1960,7 +2006,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
           to: targetNode.id,
           weight,
           highlighted: activeConnections.has(key),
-          changeCount: activeConnectionChangeCounts[key] || 0,
+          changeCount: (activeConnectionChangeCounts[key] || []).length,
         });
       }
     }
@@ -2068,7 +2114,7 @@ function buildSavePayloadFromTrainer(trainer) {
   }
 
   return {
-    version: 4,
+    version: 5,
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
@@ -3372,7 +3418,11 @@ class EvolutionTrainer {
         parentB?.visualizationConnectionCounts || {},
       );
       const visualizationChangedConnections = historyEnabled ? changedConnectionKeys : [];
-      const visualizationConnectionCounts = incrementConnectionChangeCounts(inheritedConnectionCounts, changedConnectionKeys);
+      const visualizationConnectionCounts = incrementConnectionChangeCounts(
+        inheritedConnectionCounts,
+        changedConnectionKeys,
+        this.generation + 1,
+      );
 
       nextGeneration.push({
         id: nextIndividualId += 1,
@@ -4053,31 +4103,33 @@ function drawNetworkVisualization(data = state.networkVizData) {
         : "родитель не сохранён";
   const mode = normalizeNetworkVizMode(state.networkVizMode);
   const isHeatmapMode = mode === NETWORK_VIZ_MODE_HEATMAP;
-  const heatmapDepth = normalizeNetworkVizHeatmapDepth(state.networkVizHeatmapDepth);
-  const heatmapMinCount = getNetworkVizHeatmapThreshold(data.maxHeatCount, heatmapDepth);
-  const heatmapShownCount = isHeatmapMode
-    ? data.connections.filter((connection) => Number(connection.changeCount || 0) >= heatmapMinCount).length
-      + data.layers.reduce(
-        (sum, layer) => sum + (layer.nodes || []).filter((node) => Number(node.changeCount || 0) >= heatmapMinCount).length,
-        0,
-      )
-    : 0;
+  const heatmapDepth = normalizeNetworkVizHeatmapDepth(syncNetworkVizHeatmapDefaultGeneration(data));
+  const activeChangeHistoryByKey = normalizeConnectionChangeCounts(
+    data.historyEntries?.[data.activeHistoryIndex]?.snapshot?.connectionChangeCounts
+      || data.rootSnapshot?.connectionChangeCounts
+      || {},
+    subjectGeneration || 1,
+  );
+  const heatmapCounts = isHeatmapMode
+    ? [
+        ...data.connections.map((connection) => countChangesFromGeneration(activeChangeHistoryByKey[connection.key], heatmapDepth)),
+        ...data.layers.flatMap((layer) => (layer.nodes || []).map((node) => countChangesFromGeneration(activeChangeHistoryByKey[node.biasKey], heatmapDepth))),
+      ].filter((count) => count >= NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT)
+    : [];
+  const heatmapShownCount = heatmapCounts.length;
+  const heatmapMaxCount = heatmapCounts.reduce((max, count) => Math.max(max, count), 0);
   const changeNote = availableHistory > 0 && Number(data.activeChangedCount || 0) === 0
     ? " · новых отличий не найдено"
     : "";
-  const heatmapMaxCount = Number(data.maxHeatCount || 0);
-  const heatmapRangeText = heatmapMaxCount >= NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT
-    ? `${heatmapMinCount}–${heatmapMaxCount}`
-    : `менее ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}`;
   const heatmapNote = heatmapShownCount > 0
-    ? ` · теплокарта: ${heatmapShownCount} элементов, диапазон ${heatmapRangeText}, глубина ${heatmapDepth}`
-    : ` · теплокарта: нет связей в диапазоне ${heatmapRangeText} при глубине ${heatmapDepth}`;
+    ? ` · теплокарта: ${heatmapShownCount} элементов, начиная с G${heatmapDepth}, максимум ${heatmapMaxCount}`
+    : ` · теплокарта: нет элементов с ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}+ изменениями начиная с G${heatmapDepth}`;
   ui.networkVizStatus.textContent = isHeatmapMode
     ? `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden}${heatmapNote}`
     : `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · ${parentText}${changeNote}`;
   if (ui.networkVizLegendText) {
     ui.networkVizLegendText.innerHTML = isHeatmapMode
-      ? `<i class="legend-swatch legend-swatch-recent"></i>краснее = связь чаще менялась у успешной линии; показан диапазон ${heatmapRangeText}`
+      ? `<i class="legend-swatch legend-swatch-recent"></i>краснее = связь или bias чаще менялись у успешной линии; показано начиная с G${heatmapDepth}`
       : '<i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)';
   }
 
@@ -4126,9 +4178,13 @@ function drawNetworkVisualization(data = state.networkVizData) {
   });
 
   const visibleConnections = data.connections
+    .map((connection) => ({
+      ...connection,
+      filteredChangeCount: countChangesFromGeneration(activeChangeHistoryByKey[connection.key], heatmapDepth),
+    }))
     .filter((connection) => {
       if (isHeatmapMode) {
-        return Number(connection.changeCount || 0) >= heatmapMinCount;
+        return Number(connection.filteredChangeCount || 0) >= NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT;
       }
       return connection.highlighted;
     })
@@ -4136,7 +4192,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
       if (!isHeatmapMode) {
         return 0;
       }
-      return Number(leftConnection.changeCount || 0) - Number(rightConnection.changeCount || 0);
+      return Number(leftConnection.filteredChangeCount || 0) - Number(rightConnection.filteredChangeCount || 0);
     });
   for (const connection of visibleConnections) {
     const source = positions.get(connection.from);
@@ -4145,7 +4201,13 @@ function drawNetworkVisualization(data = state.networkVizData) {
       continue;
     }
 
-    const style = getConnectionStyle(connection, { mode, maxHeatCount: data.maxHeatCount });
+    const style = getConnectionStyle(
+      {
+        ...connection,
+        changeCount: isHeatmapMode ? connection.filteredChangeCount : connection.changeCount,
+      },
+      { mode, maxHeatCount: heatmapMaxCount },
+    );
     if (!style) {
       continue;
     }
@@ -4192,12 +4254,20 @@ function drawNetworkVisualization(data = state.networkVizData) {
       }
 
       const isOutput = layer.key === "output";
-      const nodeStyle = getNodeStyle(node, layer, {
-        mode,
-        maxHeatCount: data.maxHeatCount,
-        minVisibleCount: heatmapMinCount,
-        ratio,
-      });
+      const filteredNodeChangeCount = countChangesFromGeneration(activeChangeHistoryByKey[node.biasKey], heatmapDepth);
+      const nodeStyle = getNodeStyle(
+        {
+          ...node,
+          changeCount: isHeatmapMode ? filteredNodeChangeCount : node.changeCount,
+        },
+        layer,
+        {
+          mode,
+          maxHeatCount: heatmapMaxCount,
+          minVisibleCount: NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT,
+          ratio,
+        },
+      );
       viz.beginPath();
       viz.arc(position.x, position.y, nodeRadius, 0, Math.PI * 2);
       viz.fillStyle = nodeStyle.fillStyle;
@@ -4221,7 +4291,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.fillStyle = "rgba(154, 177, 195, 0.9)";
   viz.font = `${Math.max(10, Math.round(11 * ratio))}px Inter, sans-serif`;
   const historyLabel = isHeatmapMode
-    ? `Теплокарта · max ${Number(data.maxHeatCount || 0)}`
+    ? `Теплокарта · с G${heatmapDepth} · max ${heatmapMaxCount}`
     : subjectGeneration
       ? `G${subjectGeneration} · #${data.bestId ?? "—"}`
       : "Выбор особи";
@@ -4248,6 +4318,7 @@ function updateStats(frameTime = performance.now()) {
 
   if (!state.generationTimeline.length && status.networkViz) {
     state.networkVizData = selectNetworkVizHistoryEntry(status.networkViz, state.networkVizHistoryOffset);
+    syncNetworkVizHeatmapDefaultGeneration(state.networkVizData);
     updateNetworkVizNavigation(state.networkVizData);
   }
 
@@ -4594,14 +4665,14 @@ ui.networkVizMode?.addEventListener("change", () => {
   const { mode, heatmapDepth } = applyLiveNetworkVizSettings();
   addLog(
     mode === NETWORK_VIZ_MODE_HEATMAP
-      ? `Визуализация нейросети переключена на теплокарту. Глубина показа: ${heatmapDepth}.`
+      ? `Визуализация нейросети переключена на теплокарту. Показ начиная с поколения ${heatmapDepth}.`
       : "Визуализация нейросети показывает отличия от непосредственного родителя.",
   );
 });
 
 ui.networkVizHeatmapDepth?.addEventListener("change", () => {
   const { heatmapDepth } = applyLiveNetworkVizSettings();
-  addLog(`Глубина теплокарты обновлена: ${heatmapDepth}.`);
+  addLog(`Теплокарта теперь показывает изменения начиная с поколения ${heatmapDepth}.`);
 });
 
 ui.autoSaveHours?.addEventListener("change", () => {

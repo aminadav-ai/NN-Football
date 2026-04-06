@@ -220,7 +220,24 @@ function normalizeNetworkVizHistoryOffset(value, maxOffset = NETWORK_VIZ_HISTORY
   return clamp(Math.round(toFiniteNumber(value, 0)), 0, Math.max(0, Math.floor(maxOffset)));
 }
 
-function normalizeConnectionChangeCounts(counts = {}) {
+function normalizeChangeGenerationHistory(history = [], fallbackGeneration = 1) {
+  const fallback = Math.max(1, Math.floor(Number(fallbackGeneration) || 1));
+  const sourceHistory = Array.isArray(history)
+    ? history
+    : Number.isFinite(Number(history)) && Number(history) > 0
+      ? Array.from({ length: Math.min(20, Math.floor(Number(history) || 0)) }, () => fallback)
+      : [];
+
+  return [...new Set(
+    sourceHistory
+      .map((generation) => Math.max(1, Math.floor(Number(generation) || 0)))
+      .filter((generation) => generation > 0),
+  )]
+    .sort((left, right) => left - right)
+    .slice(-20);
+}
+
+function normalizeConnectionChangeCounts(counts = {}, fallbackGeneration = 1) {
   if (!counts || typeof counts !== "object") {
     return {};
   }
@@ -231,17 +248,29 @@ function normalizeConnectionChangeCounts(counts = {}) {
       continue;
     }
 
-    const count = Math.max(0, Math.floor(Number(value) || 0));
-    if (count > 0) {
-      normalized[key] = count;
+    const history = normalizeChangeGenerationHistory(value, fallbackGeneration);
+    if (history.length > 0) {
+      normalized[key] = history;
     }
   }
 
   return normalized;
 }
 
-function cloneConnectionChangeCounts(counts = {}) {
-  return { ...normalizeConnectionChangeCounts(counts) };
+function cloneConnectionChangeCounts(counts = {}, fallbackGeneration = 1) {
+  const normalized = normalizeConnectionChangeCounts(counts, fallbackGeneration);
+  return Object.fromEntries(
+    Object.entries(normalized).map(([key, history]) => [key, [...history]]),
+  );
+}
+
+function mergeConnectionChangeHistory(...histories) {
+  return normalizeChangeGenerationHistory(histories.flatMap((history) => normalizeChangeGenerationHistory(history)));
+}
+
+function countChangesFromGeneration(history = [], sinceGeneration = 1) {
+  const normalizedSinceGeneration = Math.max(1, Math.floor(Number(sinceGeneration) || 1));
+  return normalizeChangeGenerationHistory(history).filter((generation) => generation >= normalizedSinceGeneration).length;
 }
 
 function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, parentACounts = {}, parentBNetwork = null, parentBCounts = {}) {
@@ -262,24 +291,21 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
         const childValue = row[columnIndex];
         const parentAValue = parentANetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
         const parentBValue = parentBNetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
-        const countA = countsA[key] || 0;
-        const countB = countsB[key] || 0;
+        const historyA = countsA[key] || [];
+        const historyB = countsB[key] || [];
         const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
         const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
 
-        let inheritedCount = 0;
-        if (matchesA && matchesB) {
-          inheritedCount = Math.max(countA, countB);
-        } else if (matchesA) {
-          inheritedCount = countA;
-        } else if (matchesB) {
-          inheritedCount = countB;
-        } else {
-          inheritedCount = Math.max(countA, countB);
-        }
+        const inheritedHistory = matchesA && matchesB
+          ? mergeConnectionChangeHistory(historyA, historyB)
+          : matchesA
+            ? [...historyA]
+            : matchesB
+              ? [...historyB]
+              : mergeConnectionChangeHistory(historyA, historyB);
 
-        if (inheritedCount > 0) {
-          inherited[key] = inheritedCount;
+        if (inheritedHistory.length > 0) {
+          inherited[key] = inheritedHistory;
         }
       }
     }
@@ -292,24 +318,21 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
       const childValue = layer[neuronIndex];
       const parentAValue = parentANetwork?.biases?.[layerIndex]?.[neuronIndex];
       const parentBValue = parentBNetwork?.biases?.[layerIndex]?.[neuronIndex];
-      const countA = countsA[key] || 0;
-      const countB = countsB[key] || 0;
+      const historyA = countsA[key] || [];
+      const historyB = countsB[key] || [];
       const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
       const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
 
-      let inheritedCount = 0;
-      if (matchesA && matchesB) {
-        inheritedCount = Math.max(countA, countB);
-      } else if (matchesA) {
-        inheritedCount = countA;
-      } else if (matchesB) {
-        inheritedCount = countB;
-      } else {
-        inheritedCount = Math.max(countA, countB);
-      }
+      const inheritedHistory = matchesA && matchesB
+        ? mergeConnectionChangeHistory(historyA, historyB)
+        : matchesA
+          ? [...historyA]
+          : matchesB
+            ? [...historyB]
+            : mergeConnectionChangeHistory(historyA, historyB);
 
-      if (inheritedCount > 0) {
-        inherited[key] = inheritedCount;
+      if (inheritedHistory.length > 0) {
+        inherited[key] = inheritedHistory;
       }
     }
   }
@@ -317,13 +340,15 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
   return inherited;
 }
 
-function incrementConnectionChangeCounts(baseCounts = {}, changedConnections = []) {
-  const nextCounts = cloneConnectionChangeCounts(baseCounts);
+function incrementConnectionChangeCounts(baseCounts = {}, changedConnections = [], generation = 1) {
+  const nextCounts = cloneConnectionChangeCounts(baseCounts, generation);
+  const normalizedGeneration = Math.max(1, Math.floor(Number(generation) || 1));
+
   for (const key of changedConnections) {
     if (typeof key !== "string" || !key) {
       continue;
     }
-    nextCounts[key] = (nextCounts[key] || 0) + 1;
+    nextCounts[key] = mergeConnectionChangeHistory(nextCounts[key] || [], [normalizedGeneration]);
   }
   return nextCounts;
 }
@@ -710,8 +735,9 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     activeSnapshot?.connectionChangeCounts
       || activeHistoryEntry?.snapshot?.connectionChangeCounts
       || snapshot?.connectionChangeCounts,
+    activeSnapshot?.generation || snapshot?.generation || 1,
   );
-  const maxHeatCount = Object.values(activeConnectionChangeCounts).reduce((max, count) => Math.max(max, count), 0);
+  const maxHeatCount = Object.values(activeConnectionChangeCounts).reduce((max, history) => Math.max(max, history.length), 0);
   const nonZeroHeatCount = Object.keys(activeConnectionChangeCounts).length;
 
   const layerSizes = [...network.layerSizes];
@@ -774,7 +800,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
           : String(actualIndex + 1),
         biasKey,
         highlighted: activeConnections.has(biasKey),
-        changeCount: activeConnectionChangeCounts[biasKey] || 0,
+        changeCount: (activeConnectionChangeCounts[biasKey] || []).length,
       };
     });
 
@@ -808,7 +834,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
           to: targetNode.id,
           weight,
           highlighted: activeConnections.has(key),
-          changeCount: activeConnectionChangeCounts[key] || 0,
+          changeCount: (activeConnectionChangeCounts[key] || []).length,
         });
       }
     }
@@ -898,7 +924,7 @@ function createSavePayload() {
   }
 
   return {
-    version: 4,
+    version: 5,
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
@@ -2429,7 +2455,11 @@ class EvolutionTrainer {
         parentB?.visualizationConnectionCounts || {},
       );
       const visualizationChangedConnections = historyEnabled ? changedConnectionKeys : [];
-      const visualizationConnectionCounts = incrementConnectionChangeCounts(inheritedConnectionCounts, changedConnectionKeys);
+      const visualizationConnectionCounts = incrementConnectionChangeCounts(
+        inheritedConnectionCounts,
+        changedConnectionKeys,
+        this.generation + 1,
+      );
 
       nextGeneration.push({
         id: nextIndividualId += 1,
