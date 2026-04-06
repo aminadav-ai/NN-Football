@@ -3842,8 +3842,8 @@ function drawMatch(match) {
   const scoreCenterY = scoreBoxY + scoreBoxHeight / 2;
   const scoreText = `${match.score.A} : ${match.score.B}`;
 
-  ctx.font = "bold 20px Inter, sans-serif";
-  const scoreBoxWidth = Math.max(40, Math.ceil(ctx.measureText(scoreText).width + 18));
+  ctx.font = "bold 26px Inter, sans-serif";
+  const scoreBoxWidth = Math.max(52, Math.ceil(ctx.measureText(scoreText).width + 22));
   const baseTimeBoxWidth = Math.max(28, overlayTotalWidth - scoreBoxWidth - overlayGap);
   const timeBoxWidth = Math.max(18, Math.round(baseTimeBoxWidth * 0.6));
 
@@ -3852,7 +3852,7 @@ function drawMatch(match) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 20px Inter, sans-serif";
+  ctx.font = "bold 26px Inter, sans-serif";
   ctx.fillText(scoreText, scoreBoxX + scoreBoxWidth / 2, scoreCenterY + 0.5);
 
   if (state.showTimeIndicator) {
