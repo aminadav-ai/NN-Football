@@ -1103,51 +1103,55 @@ function drawMatch(match) {
 }
 
 function renderFrame(now) {
-  if (runtime.lastTickAt === null) {
+  try {
+    if (runtime.lastTickAt === null) {
+      runtime.lastTickAt = now;
+    }
+
+    const elapsedSeconds = clamp((now - runtime.lastTickAt) / 1000, 0, 0.1);
     runtime.lastTickAt = now;
-  }
 
-  const elapsedSeconds = clamp((now - runtime.lastTickAt) / 1000, 0, 0.1);
-  runtime.lastTickAt = now;
+    if (!runtime.currentRenderMatch) {
+      runtime.currentRenderMatch = captureCurrentMatchState();
+    }
 
-  if (!runtime.currentRenderMatch) {
-    runtime.currentRenderMatch = captureCurrentMatchState();
-  }
+    if (runtime.trainer?.running && !runtime.isPaused) {
+      if (runtime.useMaxSpeed) {
+        const frameBudgetMs = 12;
+        const startedAt = performance.now();
+        let safety = 0;
 
-  if (runtime.trainer?.running && !runtime.isPaused) {
-    if (runtime.useMaxSpeed) {
-      const frameBudgetMs = 12;
-      const startedAt = performance.now();
-      let safety = 0;
+        while (runtime.trainer?.running && safety < 50000 && performance.now() - startedAt < frameBudgetMs) {
+          runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
+          runtime.trainer.step(STEP_DT);
+          runtime.currentRenderMatch = captureCurrentMatchState();
+          safety += 1;
+        }
 
-      while (runtime.trainer?.running && safety < 50000 && performance.now() - startedAt < frameBudgetMs) {
-        runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
-        runtime.trainer.step(STEP_DT);
-        runtime.currentRenderMatch = captureCurrentMatchState();
-        safety += 1;
-      }
+        runtime.accumulator = 0;
+      } else {
+        runtime.accumulator += elapsedSeconds * runtime.stepsPerFrame;
+        let safety = 0;
 
-      runtime.accumulator = 0;
-    } else {
-      runtime.accumulator += elapsedSeconds * runtime.stepsPerFrame;
-      let safety = 0;
-
-      while (runtime.accumulator >= STEP_DT && runtime.trainer?.running && safety < 5000) {
-        runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
-        runtime.trainer.step(STEP_DT);
-        runtime.currentRenderMatch = captureCurrentMatchState();
-        runtime.accumulator -= STEP_DT;
-        safety += 1;
+        while (runtime.accumulator >= STEP_DT && runtime.trainer?.running && safety < 5000) {
+          runtime.previousRenderMatch = runtime.currentRenderMatch || captureCurrentMatchState();
+          runtime.trainer.step(STEP_DT);
+          runtime.currentRenderMatch = captureCurrentMatchState();
+          runtime.accumulator -= STEP_DT;
+          safety += 1;
+        }
       }
     }
+
+    const alpha = clamp(runtime.accumulator / STEP_DT, 0, 1);
+    const matchForRender = interpolateMatchState(runtime.previousRenderMatch, runtime.currentRenderMatch, alpha);
+    drawMatch(matchForRender || runtime.currentRenderMatch);
+    emitStatus(false);
+  } catch (error) {
+    postMessage({ type: "error", message: `Ошибка worker-кадра: ${error instanceof Error ? error.message : String(error)}` });
+  } finally {
+    runtime.loopId = requestWorkerFrame(renderFrame);
   }
-
-  const alpha = clamp(runtime.accumulator / STEP_DT, 0, 1);
-  const matchForRender = interpolateMatchState(runtime.previousRenderMatch, runtime.currentRenderMatch, alpha);
-  drawMatch(matchForRender || runtime.currentRenderMatch);
-  emitStatus(false);
-
-  runtime.loopId = requestWorkerFrame(renderFrame);
 }
 
 function ensureLoop() {
@@ -2419,12 +2423,16 @@ self.onmessage = (event) => {
         if (payload && typeof payload === "object") {
           if (Object.hasOwn(payload, "showGames")) {
             runtime.showGames = Boolean(payload.showGames);
+            runtime.currentRenderMatch = captureCurrentMatchState();
+            emitStatus(true);
           }
           if (Object.hasOwn(payload, "showTimeIndicator")) {
             runtime.showTimeIndicator = payload.showTimeIndicator !== false;
+            emitStatus(true);
           }
           if (Object.hasOwn(payload, "showFieldStripes")) {
             runtime.showFieldStripes = payload.showFieldStripes !== false;
+            emitStatus(true);
           }
           if (Object.hasOwn(payload, "useMaxSpeed")) {
             runtime.useMaxSpeed = Boolean(payload.useMaxSpeed);

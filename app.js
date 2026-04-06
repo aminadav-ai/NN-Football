@@ -51,7 +51,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-4";
+const APP_ASSET_VERSION = "2026-04-06-5";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -3332,6 +3332,11 @@ function drawMatch(match) {
     return;
   }
 
+  if (!match.ball || !Array.isArray(match.players)) {
+    drawCenterText("Ожидание следующего кадра матча");
+    return;
+  }
+
   const ballSpeed = Math.hypot(match.ball.vx, match.ball.vy);
   if (
     state.stepsPerFrame === FAST_STEPS &&
@@ -3735,8 +3740,13 @@ function updateStats(frameTime = performance.now()) {
 }
 
 function tick(timestamp) {
-  updateStats(timestamp);
-  requestAnimationFrame(tick);
+  try {
+    updateStats(timestamp);
+  } catch (error) {
+    console.error("Ошибка обновления интерфейса:", error);
+  } finally {
+    requestAnimationFrame(tick);
+  }
 }
 
 ui.startBtn.addEventListener("click", () => {
