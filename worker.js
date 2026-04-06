@@ -220,6 +220,85 @@ function normalizeNetworkVizHistoryOffset(value, maxOffset = NETWORK_VIZ_HISTORY
   return clamp(Math.round(toFiniteNumber(value, 0)), 0, Math.max(0, Math.floor(maxOffset)));
 }
 
+function normalizeConnectionChangeCounts(counts = {}) {
+  if (!counts || typeof counts !== "object") {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(counts)) {
+    if (typeof key !== "string" || !key) {
+      continue;
+    }
+
+    const count = Math.max(0, Math.floor(Number(value) || 0));
+    if (count > 0) {
+      normalized[key] = count;
+    }
+  }
+
+  return normalized;
+}
+
+function cloneConnectionChangeCounts(counts = {}) {
+  return { ...normalizeConnectionChangeCounts(counts) };
+}
+
+function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, parentACounts = {}, parentBNetwork = null, parentBCounts = {}) {
+  if (!childNetwork?.weights?.length) {
+    return {};
+  }
+
+  const countsA = normalizeConnectionChangeCounts(parentACounts);
+  const countsB = normalizeConnectionChangeCounts(parentBCounts);
+  const inherited = {};
+
+  for (let layerIndex = 0; layerIndex < childNetwork.weights.length; layerIndex += 1) {
+    const layer = childNetwork.weights[layerIndex] || [];
+    for (let rowIndex = 0; rowIndex < layer.length; rowIndex += 1) {
+      const row = layer[rowIndex] || [];
+      for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+        const key = createConnectionKey(layerIndex, rowIndex, columnIndex);
+        const childValue = row[columnIndex];
+        const parentAValue = parentANetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
+        const parentBValue = parentBNetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
+        const countA = countsA[key] || 0;
+        const countB = countsB[key] || 0;
+        const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
+        const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
+
+        let inheritedCount = 0;
+        if (matchesA && matchesB) {
+          inheritedCount = Math.max(countA, countB);
+        } else if (matchesA) {
+          inheritedCount = countA;
+        } else if (matchesB) {
+          inheritedCount = countB;
+        } else {
+          inheritedCount = Math.max(countA, countB);
+        }
+
+        if (inheritedCount > 0) {
+          inherited[key] = inheritedCount;
+        }
+      }
+    }
+  }
+
+  return inherited;
+}
+
+function incrementConnectionChangeCounts(baseCounts = {}, changedConnections = []) {
+  const nextCounts = cloneConnectionChangeCounts(baseCounts);
+  for (const key of changedConnections) {
+    if (typeof key !== "string" || !key) {
+      continue;
+    }
+    nextCounts[key] = (nextCounts[key] || 0) + 1;
+  }
+  return nextCounts;
+}
+
 function trimVisualizationHistory(history = [], historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
   const normalizedDepth = normalizeNetworkVizHistoryDepth(historyDepth);
   return normalizeVisualizationHistory(history).slice(0, normalizedDepth);
@@ -298,6 +377,9 @@ function serializeNetworkSnapshot(snapshot) {
     generation: Math.max(0, Math.floor(Number(snapshot.generation) || 0)),
     id: Number(snapshot.id) || 0,
     fitness: Number(snapshot.fitness) || 0,
+    parentIds: normalizeParentIds(snapshot.parentIds),
+    createdBy: typeof snapshot.createdBy === "string" ? snapshot.createdBy : "mutation",
+    connectionChangeCounts: normalizeConnectionChangeCounts(snapshot.connectionChangeCounts),
     network: serializeNetwork(snapshot.network),
   };
 }
@@ -311,6 +393,9 @@ function deserializeNetworkSnapshot(snapshot) {
     generation: Math.max(0, Math.floor(Number(snapshot.generation) || 0)),
     id: Number(snapshot.id) || 0,
     fitness: Number(snapshot.fitness) || 0,
+    parentIds: normalizeParentIds(snapshot.parentIds),
+    createdBy: typeof snapshot.createdBy === "string" ? snapshot.createdBy : "mutation",
+    connectionChangeCounts: normalizeConnectionChangeCounts(snapshot.connectionChangeCounts),
     network: deserializeNetwork(snapshot.network),
   };
 }
@@ -560,6 +645,13 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     : typeof activeSnapshot?.createdBy === "string"
       ? activeSnapshot.createdBy
       : "mutation";
+  const activeConnectionChangeCounts = normalizeConnectionChangeCounts(
+    activeSnapshot?.connectionChangeCounts
+      || activeHistoryEntry?.snapshot?.connectionChangeCounts
+      || snapshot?.connectionChangeCounts,
+  );
+  const maxHeatCount = Object.values(activeConnectionChangeCounts).reduce((max, count) => Math.max(max, count), 0);
+  const nonZeroHeatCount = Object.keys(activeConnectionChangeCounts).length;
 
   const layerSizes = [...network.layerSizes];
   const hiddenLayerSizes = layerSizes.slice(1, -1);
@@ -646,6 +738,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
           to: targetNode.id,
           weight,
           highlighted: activeConnections.has(key),
+          changeCount: activeConnectionChangeCounts[key] || 0,
         });
       }
     }
@@ -653,6 +746,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
   return {
     version,
+    rootSnapshot: serializeNetworkSnapshot(snapshot),
     generation: Math.max(0, Math.floor(Number(activeSnapshot?.generation) || 0)),
     bestId: activeSnapshot?.id ?? null,
     bestFitness: Number(activeSnapshot?.fitness) || 0,
@@ -663,6 +757,8 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     activeHistoryIndex,
     activeHistoryGeneration: activeHistoryEntry?.generation ?? activeSnapshot?.generation ?? null,
     activeChangedCount: activeHistoryEntry?.changedConnections?.length || 0,
+    maxHeatCount,
+    nonZeroHeatCount,
     parentIds: activeParentIds,
     createdBy: activeCreatedBy,
     historyEntries: history.map((entry) => ({
@@ -732,7 +828,7 @@ function createSavePayload() {
   }
 
   return {
-    version: 3,
+    version: 4,
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
@@ -756,6 +852,7 @@ function createSavePayload() {
       visualizationChangedConnections: Array.isArray(individual.visualizationChangedConnections)
         ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
         : [],
+      visualizationConnectionCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
       visualizationParentIds: normalizeParentIds(individual.visualizationParentIds),
       visualizationOrigin: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : "mutation",
     })),
@@ -763,6 +860,7 @@ function createSavePayload() {
       ? {
           id: trainer.bestEver.id,
           fitness: trainer.bestEver.fitness,
+          connectionChangeCounts: normalizeConnectionChangeCounts(trainer.bestEver.connectionChangeCounts),
           network: serializeNetwork(trainer.bestEver.network),
         }
       : null,
@@ -1669,7 +1767,7 @@ class EvolutionTrainer {
   }
 
   updateGenerationLeader(individual) {
-    if (!this.isEvolutionVisualizationEnabled() || !individual?.network) {
+    if (!individual?.network) {
       return;
     }
 
@@ -1683,6 +1781,9 @@ class EvolutionTrainer {
         generation: this.generation,
         id: individual.id,
         fitness: individual.fitness,
+        parentIds: normalizeParentIds(individual.visualizationParentIds),
+        createdBy: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+        connectionChangeCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
         network: individual.network.clone(),
       };
     }
@@ -1700,6 +1801,7 @@ class EvolutionTrainer {
         generation: this.generation,
         id: this.bestEver.id,
         fitness: this.bestEver.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(this.bestEver.connectionChangeCounts),
         network: this.bestEver.network.clone(),
       };
     }
@@ -1709,6 +1811,9 @@ class EvolutionTrainer {
         generation: this.generation,
         id: fallback.id,
         fitness: fallback.fitness,
+        parentIds: normalizeParentIds(fallback.visualizationParentIds),
+        createdBy: typeof fallback.visualizationOrigin === "string" ? fallback.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+        connectionChangeCounts: normalizeConnectionChangeCounts(fallback.visualizationConnectionCounts),
         network: fallback.network.clone(),
       };
     }
@@ -1850,6 +1955,7 @@ class EvolutionTrainer {
       visualizationChangedConnections: Array.isArray(individual.visualizationChangedConnections)
         ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
         : [],
+      visualizationConnectionCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
       visualizationParentIds: normalizeParentIds(individual.visualizationParentIds),
       visualizationOrigin: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : "mutation",
     }));
@@ -1863,6 +1969,7 @@ class EvolutionTrainer {
       ? {
           id: Number(savedData.bestEver.id) || 0,
           fitness: Number(savedData.bestEver.fitness) || this.bestFitness,
+          connectionChangeCounts: normalizeConnectionChangeCounts(savedData.bestEver.connectionChangeCounts),
           network: deserializeNetwork(savedData.bestEver.network),
         }
       : null;
@@ -1873,6 +1980,7 @@ class EvolutionTrainer {
         generation: this.generation,
         id: this.bestEver.id,
         fitness: this.bestEver.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(this.bestEver.connectionChangeCounts),
         network: this.bestEver.network.clone(),
       };
     }
@@ -1881,6 +1989,7 @@ class EvolutionTrainer {
         generation: this.generation,
         id: this.lineageBest.id,
         fitness: this.lineageBest.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(this.lineageBest.connectionChangeCounts),
         network: this.lineageBest.network.clone(),
       };
     }
@@ -1982,6 +2091,7 @@ class EvolutionTrainer {
       network: NeuralNetwork.random(layers),
       fitness: 0,
       visualizationChangedConnections: [],
+      visualizationConnectionCounts: {},
       visualizationParentIds: [],
       visualizationOrigin: "initial",
     }));
@@ -2155,10 +2265,14 @@ class EvolutionTrainer {
             ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
             : [],
           createdBy: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+          connectionChangeCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
           snapshot: {
             generation: this.generation,
             id: individual.id,
             fitness: individual.fitness,
+            parentIds: normalizeParentIds(individual.visualizationParentIds),
+            createdBy: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+            connectionChangeCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
             network: individual.network.clone(),
           },
         })),
@@ -2195,6 +2309,7 @@ class EvolutionTrainer {
       this.bestEver = {
         id: leader.id,
         fitness: leader.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(leader.visualizationConnectionCounts),
         network: leader.network.clone(),
       };
     }
@@ -2208,6 +2323,7 @@ class EvolutionTrainer {
         network: ranked[i].network.clone(),
         fitness: 0,
         visualizationChangedConnections: [],
+        visualizationConnectionCounts: cloneConnectionChangeCounts(ranked[i].visualizationConnectionCounts),
         visualizationParentIds: [ranked[i].id],
         visualizationOrigin: "elite",
       });
@@ -2224,20 +2340,28 @@ class EvolutionTrainer {
         ? parentA.network.crossover(parentB.network)
         : parentA.network.clone();
       const child = baseNetwork.mutate(mutationSettings.rate, mutationSettings.amount);
-      const visualizationChangedConnections = historyEnabled
-        ? (useCrossover && parentB
-          ? [...new Set([
-              ...getChangedConnectionKeys(parentA.network, child),
-              ...getChangedConnectionKeys(parentB.network, child),
-            ])]
-          : getChangedConnectionKeys(parentA.network, child))
-        : [];
+      const changedConnectionKeys = useCrossover && parentB
+        ? [...new Set([
+            ...getChangedConnectionKeys(parentA.network, child),
+            ...getChangedConnectionKeys(parentB.network, child),
+          ])]
+        : getChangedConnectionKeys(parentA.network, child);
+      const inheritedConnectionCounts = buildInheritedConnectionChangeCounts(
+        child,
+        parentA.network,
+        parentA.visualizationConnectionCounts,
+        parentB?.network || null,
+        parentB?.visualizationConnectionCounts || {},
+      );
+      const visualizationChangedConnections = historyEnabled ? changedConnectionKeys : [];
+      const visualizationConnectionCounts = incrementConnectionChangeCounts(inheritedConnectionCounts, changedConnectionKeys);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
         network: child,
         fitness: 0,
         visualizationChangedConnections,
+        visualizationConnectionCounts,
         visualizationParentIds: historyEnabled ? (useCrossover && parentB ? [parentA.id, parentB.id] : [parentA.id]) : [],
         visualizationOrigin: useCrossover ? "crossover" : "mutation",
       });

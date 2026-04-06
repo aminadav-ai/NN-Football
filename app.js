@@ -34,6 +34,9 @@ const NETWORK_VIZ_MAX_HIDDEN_NODES = 100;
 const DEFAULT_NETWORK_VIZ_HISTORY_DEPTH = 30;
 const NETWORK_VIZ_HISTORY_LIMIT = 100;
 const NETWORK_VIZ_EPSILON = 1e-6;
+const NETWORK_VIZ_MODE_DIRECT = "direct";
+const NETWORK_VIZ_MODE_HEATMAP = "heatmap";
+const NETWORK_VIZ_MODE_DEFAULT = NETWORK_VIZ_MODE_DIRECT;
 const NETWORK_VIZ_INPUT_GROUPS = [
   { key: "teammates", label: "Свои", size: 8 },
   { key: "opponents", label: "Чужие", size: 8 },
@@ -51,7 +54,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-7";
+const APP_ASSET_VERSION = "2026-04-06-8";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -73,6 +76,8 @@ const ui = {
   networkVizPanel: document.getElementById("networkVizPanel"),
   networkVizCanvas: document.getElementById("networkVizCanvas"),
   networkVizStatus: document.getElementById("networkVizStatus"),
+  networkVizMode: document.getElementById("networkVizMode"),
+  networkVizLegendText: document.getElementById("networkVizLegendText"),
   networkVizOlderBtn: document.getElementById("networkVizOlderBtn"),
   networkVizNewerBtn: document.getElementById("networkVizNewerBtn"),
   networkVizStepInfo: document.getElementById("networkVizStepInfo"),
@@ -164,6 +169,7 @@ const state = {
   selectedVisualizationGeneration: null,
   selectedVisualizationIndividualId: null,
   networkVizData: null,
+  networkVizMode: NETWORK_VIZ_MODE_DEFAULT,
   networkVizVersionRendered: null,
   networkVizRenderWidth: 0,
   networkVizRenderHeight: 0,
@@ -701,6 +707,89 @@ function normalizeNetworkVizHistoryOffset(value, maxOffset = NETWORK_VIZ_HISTORY
   return clamp(Math.round(toFiniteNumber(value, 0)), 0, Math.max(0, Math.floor(maxOffset)));
 }
 
+function normalizeNetworkVizMode(value) {
+  return value === NETWORK_VIZ_MODE_HEATMAP ? NETWORK_VIZ_MODE_HEATMAP : NETWORK_VIZ_MODE_DIRECT;
+}
+
+function normalizeConnectionChangeCounts(counts = {}) {
+  if (!counts || typeof counts !== "object") {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(counts)) {
+    if (typeof key !== "string" || !key) {
+      continue;
+    }
+
+    const count = Math.max(0, Math.floor(Number(value) || 0));
+    if (count > 0) {
+      normalized[key] = count;
+    }
+  }
+
+  return normalized;
+}
+
+function cloneConnectionChangeCounts(counts = {}) {
+  return { ...normalizeConnectionChangeCounts(counts) };
+}
+
+function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, parentACounts = {}, parentBNetwork = null, parentBCounts = {}) {
+  if (!childNetwork?.weights?.length) {
+    return {};
+  }
+
+  const countsA = normalizeConnectionChangeCounts(parentACounts);
+  const countsB = normalizeConnectionChangeCounts(parentBCounts);
+  const inherited = {};
+
+  for (let layerIndex = 0; layerIndex < childNetwork.weights.length; layerIndex += 1) {
+    const layer = childNetwork.weights[layerIndex] || [];
+    for (let rowIndex = 0; rowIndex < layer.length; rowIndex += 1) {
+      const row = layer[rowIndex] || [];
+      for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+        const key = createConnectionKey(layerIndex, rowIndex, columnIndex);
+        const childValue = row[columnIndex];
+        const parentAValue = parentANetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
+        const parentBValue = parentBNetwork?.weights?.[layerIndex]?.[rowIndex]?.[columnIndex];
+        const countA = countsA[key] || 0;
+        const countB = countsB[key] || 0;
+        const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
+        const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
+
+        let inheritedCount = 0;
+        if (matchesA && matchesB) {
+          inheritedCount = Math.max(countA, countB);
+        } else if (matchesA) {
+          inheritedCount = countA;
+        } else if (matchesB) {
+          inheritedCount = countB;
+        } else {
+          inheritedCount = Math.max(countA, countB);
+        }
+
+        if (inheritedCount > 0) {
+          inherited[key] = inheritedCount;
+        }
+      }
+    }
+  }
+
+  return inherited;
+}
+
+function incrementConnectionChangeCounts(baseCounts = {}, changedConnections = []) {
+  const nextCounts = cloneConnectionChangeCounts(baseCounts);
+  for (const key of changedConnections) {
+    if (typeof key !== "string" || !key) {
+      continue;
+    }
+    nextCounts[key] = (nextCounts[key] || 0) + 1;
+  }
+  return nextCounts;
+}
+
 function trimVisualizationHistory(history = [], historyDepth = DEFAULT_NETWORK_VIZ_HISTORY_DEPTH) {
   const normalizedDepth = normalizeNetworkVizHistoryDepth(historyDepth);
   return normalizeVisualizationHistory(history).slice(0, normalizedDepth);
@@ -798,7 +887,39 @@ function applyLiveMutationSettings() {
 }
 
 function applyLiveNetworkVizSettings() {
-  return 1;
+  const mode = normalizeNetworkVizMode(ui.networkVizMode?.value);
+  state.networkVizMode = mode;
+
+  if (ui.networkVizMode) {
+    ui.networkVizMode.value = mode;
+  }
+
+  [state.savedPopulationData, state.workerSaveData].forEach((payload) => {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    payload.config = {
+      ...(payload.config || {}),
+      networkVizMode: mode,
+    };
+  });
+
+  if (state.trainer?.config) {
+    state.trainer.config.networkVizMode = mode;
+  }
+  if (state.worker) {
+    postToWorker("updateConfig", { networkVizMode: mode });
+  }
+
+  state.networkVizVersionRendered = null;
+  if (state.showEvolutionVisuals) {
+    drawNetworkVisualization(state.networkVizData);
+  }
+
+  saveSettingsToLocalStorage();
+  savePopulation();
+  return mode;
 }
 
 function selectNetworkVizHistoryEntry(data, offset = 0) {
@@ -913,6 +1034,9 @@ function buildNetworkVisualizationForIndividual(individual) {
     network: individual.snapshot.network.clone(),
     parentIds: [...individual.parentIds],
     createdBy: individual.createdBy,
+    connectionChangeCounts: normalizeConnectionChangeCounts(
+      individual.connectionChangeCounts || individual.snapshot.connectionChangeCounts,
+    ),
   };
 
   return createNetworkVisualizationData(
@@ -1297,6 +1421,11 @@ function setControlsFromConfig(config) {
     ui.networkVizHistoryDepth.value = String(historyDepth);
   }
 
+  state.networkVizMode = normalizeNetworkVizMode(config.networkVizMode);
+  if (ui.networkVizMode) {
+    ui.networkVizMode.value = state.networkVizMode;
+  }
+
   applyAutoSaveSettings(config.autoSaveHours, { persist: false, notifyWorker: false });
 }
 
@@ -1355,6 +1484,9 @@ function serializeNetworkSnapshot(snapshot) {
     generation: Math.max(0, Math.floor(Number(snapshot.generation) || 0)),
     id: Number(snapshot.id) || 0,
     fitness: Number(snapshot.fitness) || 0,
+    parentIds: normalizeParentIds(snapshot.parentIds),
+    createdBy: typeof snapshot.createdBy === "string" ? snapshot.createdBy : "mutation",
+    connectionChangeCounts: normalizeConnectionChangeCounts(snapshot.connectionChangeCounts),
     network: serializeNetwork(snapshot.network),
   };
 }
@@ -1368,6 +1500,9 @@ function deserializeNetworkSnapshot(snapshot) {
     generation: Math.max(0, Math.floor(Number(snapshot.generation) || 0)),
     id: Number(snapshot.id) || 0,
     fitness: Number(snapshot.fitness) || 0,
+    parentIds: normalizeParentIds(snapshot.parentIds),
+    createdBy: typeof snapshot.createdBy === "string" ? snapshot.createdBy : "mutation",
+    connectionChangeCounts: normalizeConnectionChangeCounts(snapshot.connectionChangeCounts),
     network: deserializeNetwork(snapshot.network),
   };
 }
@@ -1617,6 +1752,13 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     : typeof activeSnapshot?.createdBy === "string"
       ? activeSnapshot.createdBy
       : "mutation";
+  const activeConnectionChangeCounts = normalizeConnectionChangeCounts(
+    activeSnapshot?.connectionChangeCounts
+      || activeHistoryEntry?.snapshot?.connectionChangeCounts
+      || snapshot?.connectionChangeCounts,
+  );
+  const maxHeatCount = Object.values(activeConnectionChangeCounts).reduce((max, count) => Math.max(max, count), 0);
+  const nonZeroHeatCount = Object.keys(activeConnectionChangeCounts).length;
 
   const layerSizes = [...network.layerSizes];
   const hiddenLayerSizes = layerSizes.slice(1, -1);
@@ -1703,6 +1845,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
           to: targetNode.id,
           weight,
           highlighted: activeConnections.has(key),
+          changeCount: activeConnectionChangeCounts[key] || 0,
         });
       }
     }
@@ -1721,6 +1864,8 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     activeHistoryIndex,
     activeHistoryGeneration: activeHistoryEntry?.generation ?? activeSnapshot?.generation ?? null,
     activeChangedCount: activeHistoryEntry?.changedConnections?.length || 0,
+    maxHeatCount,
+    nonZeroHeatCount,
     parentIds: activeParentIds,
     createdBy: activeCreatedBy,
     historyEntries: serializeVisualizationHistory(history),
@@ -1808,7 +1953,7 @@ function buildSavePayloadFromTrainer(trainer) {
   }
 
   return {
-    version: 3,
+    version: 4,
     savedAt: Date.now(),
     generation: trainer.generation,
     bestFitness: trainer.bestFitness,
@@ -1823,6 +1968,7 @@ function buildSavePayloadFromTrainer(trainer) {
           crossoverRate: normalizeCrossoverRate(trainer.config.crossoverRate),
           mutationSettings: normalizeMutationSettings(trainer.config.mutationSettings),
           networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(trainer.config.networkVizHistoryDepth),
+          networkVizMode: normalizeNetworkVizMode(trainer.config.networkVizMode),
           autoSaveHours: normalizeAutoSaveHours(trainer.config.autoSaveHours),
         }
       : null,
@@ -1833,6 +1979,7 @@ function buildSavePayloadFromTrainer(trainer) {
       visualizationChangedConnections: Array.isArray(individual.visualizationChangedConnections)
         ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
         : [],
+      visualizationConnectionCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
       visualizationParentIds: normalizeParentIds(individual.visualizationParentIds),
       visualizationOrigin: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : "mutation",
     })),
@@ -1840,6 +1987,7 @@ function buildSavePayloadFromTrainer(trainer) {
       ? {
           id: trainer.bestEver.id,
           fitness: trainer.bestEver.fitness,
+          connectionChangeCounts: normalizeConnectionChangeCounts(trainer.bestEver.connectionChangeCounts),
           network: serializeNetwork(trainer.bestEver.network),
         }
       : null,
@@ -1920,6 +2068,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
         crossoverRate: normalizeCrossoverRate(payload.config.crossoverRate),
         mutationSettings: normalizeMutationSettings(payload.config.mutationSettings),
         networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(payload.config.networkVizHistoryDepth),
+        networkVizMode: normalizeNetworkVizMode(payload.config.networkVizMode ?? state.networkVizMode),
         autoSaveHours: normalizeAutoSaveHours(payload.config.autoSaveHours ?? ui.autoSaveHours?.value),
       }
     : null;
@@ -2502,7 +2651,7 @@ class EvolutionTrainer {
   }
 
   updateGenerationLeader(individual) {
-    if (!this.isEvolutionVisualizationEnabled() || !individual?.network) {
+    if (!individual?.network) {
       return;
     }
 
@@ -2516,6 +2665,9 @@ class EvolutionTrainer {
         generation: this.generation,
         id: individual.id,
         fitness: individual.fitness,
+        parentIds: normalizeParentIds(individual.visualizationParentIds),
+        createdBy: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+        connectionChangeCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
         network: individual.network.clone(),
       };
     }
@@ -2533,6 +2685,7 @@ class EvolutionTrainer {
         generation: this.generation,
         id: this.bestEver.id,
         fitness: this.bestEver.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(this.bestEver.connectionChangeCounts),
         network: this.bestEver.network.clone(),
       };
     }
@@ -2542,6 +2695,9 @@ class EvolutionTrainer {
         generation: this.generation,
         id: fallback.id,
         fitness: fallback.fitness,
+        parentIds: normalizeParentIds(fallback.visualizationParentIds),
+        createdBy: typeof fallback.visualizationOrigin === "string" ? fallback.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+        connectionChangeCounts: normalizeConnectionChangeCounts(fallback.visualizationConnectionCounts),
         network: fallback.network.clone(),
       };
     }
@@ -2615,6 +2771,7 @@ class EvolutionTrainer {
       crossoverRate: normalizeCrossoverRate(config.crossoverRate),
       mutationSettings: normalizeMutationSettings(config.mutationSettings),
       networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(config.networkVizHistoryDepth),
+      networkVizMode: normalizeNetworkVizMode(config.networkVizMode),
       showEvolutionVisuals: config.showEvolutionVisuals !== false,
     };
     this.bestEver = null;
@@ -2673,6 +2830,7 @@ class EvolutionTrainer {
       networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(
         savedData.config?.networkVizHistoryDepth ?? fallbackConfig.networkVizHistoryDepth,
       ),
+      networkVizMode: normalizeNetworkVizMode(savedData.config?.networkVizMode ?? fallbackConfig.networkVizMode),
     };
 
     this.config = mergedConfig;
@@ -2683,6 +2841,7 @@ class EvolutionTrainer {
       visualizationChangedConnections: Array.isArray(individual.visualizationChangedConnections)
         ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
         : [],
+      visualizationConnectionCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
       visualizationParentIds: normalizeParentIds(individual.visualizationParentIds),
       visualizationOrigin: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : "mutation",
     }));
@@ -2696,6 +2855,7 @@ class EvolutionTrainer {
       ? {
           id: Number(savedData.bestEver.id) || 0,
           fitness: Number(savedData.bestEver.fitness) || this.bestFitness,
+          connectionChangeCounts: normalizeConnectionChangeCounts(savedData.bestEver.connectionChangeCounts),
           network: deserializeNetwork(savedData.bestEver.network),
         }
       : null;
@@ -2706,6 +2866,7 @@ class EvolutionTrainer {
         generation: this.generation,
         id: this.bestEver.id,
         fitness: this.bestEver.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(this.bestEver.connectionChangeCounts),
         network: this.bestEver.network.clone(),
       };
     }
@@ -2714,6 +2875,7 @@ class EvolutionTrainer {
         generation: this.generation,
         id: this.lineageBest.id,
         fitness: this.lineageBest.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(this.lineageBest.connectionChangeCounts),
         network: this.lineageBest.network.clone(),
       };
     }
@@ -2815,6 +2977,7 @@ class EvolutionTrainer {
       network: NeuralNetwork.random(layers),
       fitness: 0,
       visualizationChangedConnections: [],
+      visualizationConnectionCounts: {},
       visualizationParentIds: [],
       visualizationOrigin: "initial",
     }));
@@ -2988,10 +3151,14 @@ class EvolutionTrainer {
             ? individual.visualizationChangedConnections.filter((key) => typeof key === "string")
             : [],
           createdBy: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+          connectionChangeCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
           snapshot: {
             generation: this.generation,
             id: individual.id,
             fitness: individual.fitness,
+            parentIds: normalizeParentIds(individual.visualizationParentIds),
+            createdBy: typeof individual.visualizationOrigin === "string" ? individual.visualizationOrigin : this.generation <= 1 ? "initial" : "mutation",
+            connectionChangeCounts: normalizeConnectionChangeCounts(individual.visualizationConnectionCounts),
             network: individual.network.clone(),
           },
         })),
@@ -3038,6 +3205,7 @@ class EvolutionTrainer {
       this.bestEver = {
         id: leader.id,
         fitness: leader.fitness,
+        connectionChangeCounts: normalizeConnectionChangeCounts(leader.visualizationConnectionCounts),
         network: leader.network.clone(),
       };
     }
@@ -3051,6 +3219,7 @@ class EvolutionTrainer {
         network: ranked[i].network.clone(),
         fitness: 0,
         visualizationChangedConnections: [],
+        visualizationConnectionCounts: cloneConnectionChangeCounts(ranked[i].visualizationConnectionCounts),
         visualizationParentIds: [ranked[i].id],
         visualizationOrigin: "elite",
       });
@@ -3067,20 +3236,28 @@ class EvolutionTrainer {
         ? parentA.network.crossover(parentB.network)
         : parentA.network.clone();
       const child = baseNetwork.mutate(mutationSettings.rate, mutationSettings.amount);
-      const visualizationChangedConnections = historyEnabled
-        ? (useCrossover && parentB
-          ? [...new Set([
-              ...getChangedConnectionKeys(parentA.network, child),
-              ...getChangedConnectionKeys(parentB.network, child),
-            ])]
-          : getChangedConnectionKeys(parentA.network, child))
-        : [];
+      const changedConnectionKeys = useCrossover && parentB
+        ? [...new Set([
+            ...getChangedConnectionKeys(parentA.network, child),
+            ...getChangedConnectionKeys(parentB.network, child),
+          ])]
+        : getChangedConnectionKeys(parentA.network, child);
+      const inheritedConnectionCounts = buildInheritedConnectionChangeCounts(
+        child,
+        parentA.network,
+        parentA.visualizationConnectionCounts,
+        parentB?.network || null,
+        parentB?.visualizationConnectionCounts || {},
+      );
+      const visualizationChangedConnections = historyEnabled ? changedConnectionKeys : [];
+      const visualizationConnectionCounts = incrementConnectionChangeCounts(inheritedConnectionCounts, changedConnectionKeys);
 
       nextGeneration.push({
         id: nextIndividualId += 1,
         network: child,
         fitness: 0,
         visualizationChangedConnections,
+        visualizationConnectionCounts,
         visualizationParentIds: historyEnabled ? (useCrossover && parentB ? [parentA.id, parentB.id] : [parentA.id]) : [],
         visualizationOrigin: useCrossover ? "crossover" : "mutation",
       });
@@ -3362,6 +3539,7 @@ function readConfig() {
     crossoverRate: normalizeCrossoverRate(ui.crossoverRate?.value),
     mutationSettings: readMutationSettings(),
     networkVizHistoryDepth: normalizeNetworkVizHistoryDepth(ui.networkVizHistoryDepth?.value),
+    networkVizMode: normalizeNetworkVizMode(ui.networkVizMode?.value),
     autoSaveHours: normalizeAutoSaveHours(ui.autoSaveHours?.value),
   };
 }
@@ -3600,9 +3778,31 @@ function colorToCss(color) {
   return `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
 }
 
-function getConnectionStyle() {
-  const recentColor = { r: 255, g: 98, b: 98, a: 0.9 };
+function getConnectionStyle(connection = {}, options = {}) {
+  const mode = normalizeNetworkVizMode(options.mode ?? state.networkVizMode);
 
+  if (mode === NETWORK_VIZ_MODE_HEATMAP) {
+    const maxHeatCount = Math.max(0, Math.floor(Number(options.maxHeatCount) || 0));
+    const changeCount = Math.max(0, Math.floor(Number(connection.changeCount) || 0));
+    if (maxHeatCount <= 0 || changeCount <= 0) {
+      return null;
+    }
+
+    const intensity = clamp(changeCount / maxHeatCount, 0, 1);
+    const heatColor = {
+      r: 255,
+      g: Math.round(lerp(235, 74, intensity)),
+      b: Math.round(lerp(235, 74, intensity)),
+      a: lerp(0.18, 0.95, Math.sqrt(intensity)),
+    };
+
+    return {
+      strokeStyle: colorToCss(heatColor),
+      lineWidth: lerp(0.6, 2.4, Math.sqrt(intensity)),
+    };
+  }
+
+  const recentColor = { r: 255, g: 98, b: 98, a: 0.9 };
   return {
     strokeStyle: colorToCss(recentColor),
     lineWidth: 1,
@@ -3643,6 +3843,9 @@ function drawNetworkVisualization(data = state.networkVizData) {
 
   if (!data?.layers?.length) {
     ui.networkVizStatus.textContent = "Запустите обучение, чтобы увидеть эволюцию связей лучшей особи.";
+    if (ui.networkVizLegendText) {
+      ui.networkVizLegendText.innerHTML = '<i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)';
+    }
     updateNetworkVizNavigation(null);
     viz.fillStyle = "rgba(255, 255, 255, 0.86)";
     viz.font = `${Math.max(16, Math.round(18 * ratio))}px Inter, sans-serif`;
@@ -3671,10 +3874,22 @@ function drawNetworkVisualization(data = state.networkVizData) {
       : data.createdBy === "elite"
         ? "клон без мутации"
         : "родитель не сохранён";
+  const mode = normalizeNetworkVizMode(state.networkVizMode);
+  const isHeatmapMode = mode === NETWORK_VIZ_MODE_HEATMAP;
   const changeNote = availableHistory > 0 && Number(data.activeChangedCount || 0) === 0
     ? " · новых отличий не найдено"
     : "";
-  ui.networkVizStatus.textContent = `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · ${parentText}${changeNote}`;
+  const heatmapNote = Number(data.nonZeroHeatCount || 0) > 0
+    ? ` · теплокарта: ${Number(data.nonZeroHeatCount || 0)} связей, максимум ${Number(data.maxHeatCount || 0)}`
+    : " · теплокарта: пока нет накопленных изменений";
+  ui.networkVizStatus.textContent = isHeatmapMode
+    ? `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden}${heatmapNote}`
+    : `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · ${parentText}${changeNote}`;
+  if (ui.networkVizLegendText) {
+    ui.networkVizLegendText.innerHTML = isHeatmapMode
+      ? '<i class="legend-swatch legend-swatch-recent"></i>краснее = связь чаще менялась у успешной линии; нулевые связи не рисуются'
+      : '<i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)';
+  }
 
   const left = 116 * ratio;
   const right = 92 * ratio;
@@ -3720,7 +3935,12 @@ function drawNetworkVisualization(data = state.networkVizData) {
     });
   });
 
-  const visibleConnections = data.connections.filter((connection) => connection.highlighted);
+  const visibleConnections = data.connections.filter((connection) => {
+    if (isHeatmapMode) {
+      return Number(connection.changeCount || 0) > 0;
+    }
+    return connection.highlighted;
+  });
   for (const connection of visibleConnections) {
     const source = positions.get(connection.from);
     const target = positions.get(connection.to);
@@ -3728,7 +3948,11 @@ function drawNetworkVisualization(data = state.networkVizData) {
       continue;
     }
 
-    const style = getConnectionStyle(connection);
+    const style = getConnectionStyle(connection, { mode, maxHeatCount: data.maxHeatCount });
+    if (!style) {
+      continue;
+    }
+
     viz.beginPath();
     viz.moveTo(source.x, source.y);
     viz.lineTo(target.x, target.y);
@@ -3794,9 +4018,11 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.textBaseline = "top";
   viz.fillStyle = "rgba(154, 177, 195, 0.9)";
   viz.font = `${Math.max(10, Math.round(11 * ratio))}px Inter, sans-serif`;
-  const historyLabel = subjectGeneration
-    ? `G${subjectGeneration} · #${data.bestId ?? "—"}`
-    : "Выбор особи";
+  const historyLabel = isHeatmapMode
+    ? `Теплокарта · max ${Number(data.maxHeatCount || 0)}`
+    : subjectGeneration
+      ? `G${subjectGeneration} · #${data.bestId ?? "—"}`
+      : "Выбор особи";
   viz.fillText(historyLabel, width - 12 * ratio, 10 * ratio);
 }
 
@@ -3988,7 +4214,11 @@ ui.showEvolutionVisualsToggle?.addEventListener("change", () => {
   state.networkVizVersionRendered = null;
   saveSettingsToLocalStorage();
   savePopulation();
-  addLog(state.showEvolutionVisuals ? "Визуализация поколений и нейросети включена." : "Визуализация поколений и нейросети отключена и сбор истории остановлен.");
+  addLog(
+    state.showEvolutionVisuals
+      ? "Визуализация поколений и нейросети включена."
+      : "Визуализация поколений и нейросети скрыта: детальная история остановлена, но счётчики теплокарты продолжают накапливаться.",
+  );
 });
 
 ui.sidebarToggle.addEventListener("click", () => {
@@ -4156,6 +4386,15 @@ ui.networkVizHistoryDepth?.addEventListener("change", () => {
   saveSettingsToLocalStorage();
   savePopulation();
   addLog(`История визуализации ограничена последними ${historyDepth} поколениями.`);
+});
+
+ui.networkVizMode?.addEventListener("change", () => {
+  const mode = applyLiveNetworkVizSettings();
+  addLog(
+    mode === NETWORK_VIZ_MODE_HEATMAP
+      ? "Визуализация нейросети переключена на накопительную теплокарту изменений связей."
+      : "Визуализация нейросети показывает отличия от непосредственного родителя.",
+  );
 });
 
 ui.autoSaveHours?.addEventListener("change", () => {
