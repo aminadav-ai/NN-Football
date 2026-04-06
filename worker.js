@@ -285,6 +285,35 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
     }
   }
 
+  for (let layerIndex = 0; layerIndex < (childNetwork.biases?.length || 0); layerIndex += 1) {
+    const layer = childNetwork.biases[layerIndex] || [];
+    for (let neuronIndex = 0; neuronIndex < layer.length; neuronIndex += 1) {
+      const key = createBiasKey(layerIndex, neuronIndex);
+      const childValue = layer[neuronIndex];
+      const parentAValue = parentANetwork?.biases?.[layerIndex]?.[neuronIndex];
+      const parentBValue = parentBNetwork?.biases?.[layerIndex]?.[neuronIndex];
+      const countA = countsA[key] || 0;
+      const countB = countsB[key] || 0;
+      const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
+      const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
+
+      let inheritedCount = 0;
+      if (matchesA && matchesB) {
+        inheritedCount = Math.max(countA, countB);
+      } else if (matchesA) {
+        inheritedCount = countA;
+      } else if (matchesB) {
+        inheritedCount = countB;
+      } else {
+        inheritedCount = Math.max(countA, countB);
+      }
+
+      if (inheritedCount > 0) {
+        inherited[key] = inheritedCount;
+      }
+    }
+  }
+
   return inherited;
 }
 
@@ -502,6 +531,10 @@ function createConnectionKey(layerIndex, rowIndex, columnIndex) {
   return `w:${layerIndex}:${rowIndex}:${columnIndex}`;
 }
 
+function createBiasKey(layerIndex, neuronIndex) {
+  return `b:${layerIndex}:${neuronIndex}`;
+}
+
 function getChangedConnectionKeys(previousNetwork, currentNetwork) {
   if (!previousNetwork?.weights || !currentNetwork?.weights) {
     return [];
@@ -528,6 +561,34 @@ function getChangedConnectionKeys(previousNetwork, currentNetwork) {
         if (!Number.isFinite(previousWeight) || Math.abs(currentWeight - previousWeight) > NETWORK_VIZ_EPSILON) {
           changed.push(createConnectionKey(layerIndex, rowIndex, columnIndex));
         }
+      }
+    }
+  }
+
+  return changed;
+}
+
+function getChangedBiasKeys(previousNetwork, currentNetwork) {
+  if (!previousNetwork?.biases || !currentNetwork?.biases) {
+    return [];
+  }
+
+  const changed = [];
+  const layerCount = Math.min(previousNetwork.biases.length, currentNetwork.biases.length);
+
+  for (let layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
+    const currentLayer = currentNetwork.biases[layerIndex] || [];
+    const previousLayer = previousNetwork.biases[layerIndex] || [];
+
+    for (let neuronIndex = 0; neuronIndex < currentLayer.length; neuronIndex += 1) {
+      const currentBias = currentLayer[neuronIndex];
+      const previousBias = previousLayer[neuronIndex];
+      if (!Number.isFinite(currentBias)) {
+        continue;
+      }
+
+      if (!Number.isFinite(previousBias) || Math.abs(currentBias - previousBias) > NETWORK_VIZ_EPSILON) {
+        changed.push(createBiasKey(layerIndex, neuronIndex));
       }
     }
   }
@@ -678,6 +739,9 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
               label: String(localIndex + 1),
               groupKey: group.key,
               groupLabel: group.label,
+              biasKey: null,
+              highlighted: false,
+              changeCount: 0,
             });
           }
         }
@@ -696,17 +760,23 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     }
 
     const isOutputLayer = layerIndex === layerSizes.length - 1;
-    const nodes = indices.map((actualIndex, localIndex) => ({
-      id: `${layerIndex}:${actualIndex}`,
-      actualIndex,
-      label: isOutputLayer
-        ? localIndex === 0
-          ? "Ход"
-          : localIndex === 1
-            ? "Поворот"
-            : `Выход ${localIndex + 1}`
-        : String(actualIndex + 1),
-    }));
+    const nodes = indices.map((actualIndex, localIndex) => {
+      const biasKey = createBiasKey(layerIndex - 1, actualIndex);
+      return {
+        id: `${layerIndex}:${actualIndex}`,
+        actualIndex,
+        label: isOutputLayer
+          ? localIndex === 0
+            ? "Ход"
+            : localIndex === 1
+              ? "Поворот"
+              : `Выход ${localIndex + 1}`
+          : String(actualIndex + 1),
+        biasKey,
+        highlighted: activeConnections.has(biasKey),
+        changeCount: activeConnectionChangeCounts[biasKey] || 0,
+      };
+    });
 
     return {
       key: isOutputLayer ? "output" : `hidden-${layerIndex}`,
@@ -2344,8 +2414,13 @@ class EvolutionTrainer {
         ? [...new Set([
             ...getChangedConnectionKeys(parentA.network, child),
             ...getChangedConnectionKeys(parentB.network, child),
+            ...getChangedBiasKeys(parentA.network, child),
+            ...getChangedBiasKeys(parentB.network, child),
           ])]
-        : getChangedConnectionKeys(parentA.network, child);
+        : [...new Set([
+            ...getChangedConnectionKeys(parentA.network, child),
+            ...getChangedBiasKeys(parentA.network, child),
+          ])];
       const inheritedConnectionCounts = buildInheritedConnectionChangeCounts(
         child,
         parentA.network,

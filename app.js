@@ -57,7 +57,7 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Автогол" },
   { key: "total", label: "Итого", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-06-9";
+const APP_ASSET_VERSION = "2026-04-06-10";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
@@ -801,6 +801,35 @@ function buildInheritedConnectionChangeCounts(childNetwork, parentANetwork, pare
         if (inheritedCount > 0) {
           inherited[key] = inheritedCount;
         }
+      }
+    }
+  }
+
+  for (let layerIndex = 0; layerIndex < (childNetwork.biases?.length || 0); layerIndex += 1) {
+    const layer = childNetwork.biases[layerIndex] || [];
+    for (let neuronIndex = 0; neuronIndex < layer.length; neuronIndex += 1) {
+      const key = createBiasKey(layerIndex, neuronIndex);
+      const childValue = layer[neuronIndex];
+      const parentAValue = parentANetwork?.biases?.[layerIndex]?.[neuronIndex];
+      const parentBValue = parentBNetwork?.biases?.[layerIndex]?.[neuronIndex];
+      const countA = countsA[key] || 0;
+      const countB = countsB[key] || 0;
+      const matchesA = Number.isFinite(parentAValue) && Math.abs(childValue - parentAValue) <= NETWORK_VIZ_EPSILON;
+      const matchesB = Number.isFinite(parentBValue) && Math.abs(childValue - parentBValue) <= NETWORK_VIZ_EPSILON;
+
+      let inheritedCount = 0;
+      if (matchesA && matchesB) {
+        inheritedCount = Math.max(countA, countB);
+      } else if (matchesA) {
+        inheritedCount = countA;
+      } else if (matchesB) {
+        inheritedCount = countB;
+      } else {
+        inheritedCount = Math.max(countA, countB);
+      }
+
+      if (inheritedCount > 0) {
+        inherited[key] = inheritedCount;
       }
     }
   }
@@ -1652,6 +1681,10 @@ function createConnectionKey(layerIndex, rowIndex, columnIndex) {
   return `w:${layerIndex}:${rowIndex}:${columnIndex}`;
 }
 
+function createBiasKey(layerIndex, neuronIndex) {
+  return `b:${layerIndex}:${neuronIndex}`;
+}
+
 function getChangedConnectionKeys(previousNetwork, currentNetwork) {
   if (!previousNetwork?.weights || !currentNetwork?.weights) {
     return [];
@@ -1678,6 +1711,34 @@ function getChangedConnectionKeys(previousNetwork, currentNetwork) {
         if (!Number.isFinite(previousWeight) || Math.abs(currentWeight - previousWeight) > NETWORK_VIZ_EPSILON) {
           changed.push(createConnectionKey(layerIndex, rowIndex, columnIndex));
         }
+      }
+    }
+  }
+
+  return changed;
+}
+
+function getChangedBiasKeys(previousNetwork, currentNetwork) {
+  if (!previousNetwork?.biases || !currentNetwork?.biases) {
+    return [];
+  }
+
+  const changed = [];
+  const layerCount = Math.min(previousNetwork.biases.length, currentNetwork.biases.length);
+
+  for (let layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
+    const currentLayer = currentNetwork.biases[layerIndex] || [];
+    const previousLayer = previousNetwork.biases[layerIndex] || [];
+
+    for (let neuronIndex = 0; neuronIndex < currentLayer.length; neuronIndex += 1) {
+      const currentBias = currentLayer[neuronIndex];
+      const previousBias = previousLayer[neuronIndex];
+      if (!Number.isFinite(currentBias)) {
+        continue;
+      }
+
+      if (!Number.isFinite(previousBias) || Math.abs(currentBias - previousBias) > NETWORK_VIZ_EPSILON) {
+        changed.push(createBiasKey(layerIndex, neuronIndex));
       }
     }
   }
@@ -1830,6 +1891,9 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
               label: String(localIndex + 1),
               groupKey: group.key,
               groupLabel: group.label,
+              biasKey: null,
+              highlighted: false,
+              changeCount: 0,
             });
           }
         }
@@ -1848,17 +1912,23 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
     }
 
     const isOutputLayer = layerIndex === layerSizes.length - 1;
-    const nodes = indices.map((actualIndex, localIndex) => ({
-      id: `${layerIndex}:${actualIndex}`,
-      actualIndex,
-      label: isOutputLayer
-        ? localIndex === 0
-          ? "Ход"
-          : localIndex === 1
-            ? "Поворот"
-            : `Выход ${localIndex + 1}`
-        : String(actualIndex + 1),
-    }));
+    const nodes = indices.map((actualIndex, localIndex) => {
+      const biasKey = createBiasKey(layerIndex - 1, actualIndex);
+      return {
+        id: `${layerIndex}:${actualIndex}`,
+        actualIndex,
+        label: isOutputLayer
+          ? localIndex === 0
+            ? "Ход"
+            : localIndex === 1
+              ? "Поворот"
+              : `Выход ${localIndex + 1}`
+          : String(actualIndex + 1),
+        biasKey,
+        highlighted: activeConnections.has(biasKey),
+        changeCount: activeConnectionChangeCounts[biasKey] || 0,
+      };
+    });
 
     return {
       key: isOutputLayer ? "output" : `hidden-${layerIndex}`,
@@ -3287,8 +3357,13 @@ class EvolutionTrainer {
         ? [...new Set([
             ...getChangedConnectionKeys(parentA.network, child),
             ...getChangedConnectionKeys(parentB.network, child),
+            ...getChangedBiasKeys(parentA.network, child),
+            ...getChangedBiasKeys(parentB.network, child),
           ])]
-        : getChangedConnectionKeys(parentA.network, child);
+        : [...new Set([
+            ...getChangedConnectionKeys(parentA.network, child),
+            ...getChangedBiasKeys(parentA.network, child),
+          ])];
       const inheritedConnectionCounts = buildInheritedConnectionChangeCounts(
         child,
         parentA.network,
@@ -3863,6 +3938,54 @@ function getConnectionStyle(connection = {}, options = {}) {
   };
 }
 
+function getNodeStyle(node = {}, layer = {}, options = {}) {
+  const mode = normalizeNetworkVizMode(options.mode ?? state.networkVizMode);
+  const isInput = layer.key === "input";
+  const isOutput = layer.key === "output";
+  const defaultStyle = {
+    fillStyle: isOutput ? "rgba(116, 240, 184, 0.95)" : isInput ? "rgba(132, 203, 255, 0.96)" : "rgba(229, 241, 252, 0.88)",
+    strokeStyle: isOutput ? "rgba(24, 70, 53, 0.95)" : "rgba(20, 36, 50, 0.95)",
+    lineWidth: Math.max(1, 1.1 * (options.ratio || 1)),
+  };
+
+  if (isInput) {
+    return defaultStyle;
+  }
+
+  if (mode === NETWORK_VIZ_MODE_HEATMAP) {
+    const maxHeatCount = Math.max(0, Math.floor(Number(options.maxHeatCount) || 0));
+    const minVisibleCount = Math.max(NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT, Math.floor(Number(options.minVisibleCount) || 0));
+    const changeCount = Math.max(0, Math.floor(Number(node.changeCount) || 0));
+    if (maxHeatCount >= minVisibleCount && changeCount >= minVisibleCount) {
+      const intensity = maxHeatCount === minVisibleCount
+        ? 1
+        : clamp((changeCount - minVisibleCount) / (maxHeatCount - minVisibleCount), 0, 1);
+      const fillColor = {
+        r: 255,
+        g: Math.round(lerp(238, 82, intensity)),
+        b: Math.round(lerp(238, 82, intensity)),
+        a: lerp(0.82, 0.98, Math.sqrt(intensity)),
+      };
+
+      return {
+        fillStyle: colorToCss(fillColor),
+        strokeStyle: "rgba(80, 18, 18, 0.96)",
+        lineWidth: Math.max(1.2, lerp(1.2, 1.8, Math.sqrt(intensity)) * (options.ratio || 1)),
+      };
+    }
+  }
+
+  if (node.highlighted) {
+    return {
+      fillStyle: "rgba(255, 132, 132, 0.96)",
+      strokeStyle: "rgba(96, 18, 18, 0.95)",
+      lineWidth: Math.max(1.2, 1.4 * (options.ratio || 1)),
+    };
+  }
+
+  return defaultStyle;
+}
+
 function drawNetworkVisualization(data = state.networkVizData) {
   if (!state.showEvolutionVisuals) {
     return;
@@ -3934,6 +4057,10 @@ function drawNetworkVisualization(data = state.networkVizData) {
   const heatmapMinCount = getNetworkVizHeatmapThreshold(data.maxHeatCount, heatmapDepth);
   const heatmapShownCount = isHeatmapMode
     ? data.connections.filter((connection) => Number(connection.changeCount || 0) >= heatmapMinCount).length
+      + data.layers.reduce(
+        (sum, layer) => sum + (layer.nodes || []).filter((node) => Number(node.changeCount || 0) >= heatmapMinCount).length,
+        0,
+      )
     : 0;
   const changeNote = availableHistory > 0 && Number(data.activeChangedCount || 0) === 0
     ? " · новых отличий не найдено"
@@ -3943,7 +4070,7 @@ function drawNetworkVisualization(data = state.networkVizData) {
     ? `${heatmapMinCount}–${heatmapMaxCount}`
     : `менее ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}`;
   const heatmapNote = heatmapShownCount > 0
-    ? ` · теплокарта: ${heatmapShownCount} связей, диапазон ${heatmapRangeText}, глубина ${heatmapDepth}`
+    ? ` · теплокарта: ${heatmapShownCount} элементов, диапазон ${heatmapRangeText}, глубина ${heatmapDepth}`
     : ` · теплокарта: нет связей в диапазоне ${heatmapRangeText} при глубине ${heatmapDepth}`;
   ui.networkVizStatus.textContent = isHeatmapMode
     ? `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden}${heatmapNote}`
@@ -4065,13 +4192,18 @@ function drawNetworkVisualization(data = state.networkVizData) {
       }
 
       const isOutput = layer.key === "output";
-      const isInput = layer.key === "input";
+      const nodeStyle = getNodeStyle(node, layer, {
+        mode,
+        maxHeatCount: data.maxHeatCount,
+        minVisibleCount: heatmapMinCount,
+        ratio,
+      });
       viz.beginPath();
       viz.arc(position.x, position.y, nodeRadius, 0, Math.PI * 2);
-      viz.fillStyle = isOutput ? "rgba(116, 240, 184, 0.95)" : isInput ? "rgba(132, 203, 255, 0.96)" : "rgba(229, 241, 252, 0.88)";
+      viz.fillStyle = nodeStyle.fillStyle;
       viz.fill();
-      viz.lineWidth = Math.max(1, 1.1 * ratio);
-      viz.strokeStyle = isOutput ? "rgba(24, 70, 53, 0.95)" : "rgba(20, 36, 50, 0.95)";
+      viz.lineWidth = nodeStyle.lineWidth;
+      viz.strokeStyle = nodeStyle.strokeStyle;
       viz.stroke();
 
       if (isOutput) {
