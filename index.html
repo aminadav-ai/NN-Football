@@ -215,13 +215,19 @@
             height="420"
             aria-label="Схема нейросети и изменений её связей"
           ></canvas>
-          <label class="network-viz-toolbar" for="networkVizMode">
-            <span>Режим визуализации</span>
-            <select id="networkVizMode" aria-label="Режим визуализации нейросети">
-              <option value="direct">Отличия от родителя</option>
-              <option value="heatmap">Тепловая карта изменений</option>
-            </select>
-          </label>
+          <div class="network-viz-toolbar-row">
+            <label class="network-viz-toolbar" for="networkVizMode">
+              <span>Режим визуализации</span>
+              <select id="networkVizMode" aria-label="Режим визуализации нейросети">
+                <option value="direct">Отличия от родителя</option>
+                <option value="heatmap">Тепловая карта изменений</option>
+              </select>
+            </label>
+            <label class="network-viz-toolbar" id="networkVizHeatmapDepthControl" for="networkVizHeatmapDepth" hidden>
+              <span>Глубина теплокарты</span>
+              <input id="networkVizHeatmapDepth" type="number" min="0" max="1000" step="1" value="10" />
+            </label>
+          </div>
           <div class="network-viz-legend">
             <span id="networkVizLegendText"><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
           </div>
@@ -229,6 +235,6 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=2026-04-06-8"></script>
+    <script type="module" src="./app.js?v=2026-04-06-9"></script>
   </body>
 </html>

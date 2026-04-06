@@ -347,16 +347,24 @@ button.max-btn {
   margin: 0;
 }
 
+.network-viz-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: end;
+  margin-top: 10px;
+}
+
 .network-viz-toolbar {
   display: grid;
   gap: 6px;
-  min-width: min(280px, 100%);
-  margin-top: 10px;
+  min-width: min(220px, 100%);
   font-size: 0.84rem;
   color: var(--muted);
 }
 
-.network-viz-toolbar select {
+.network-viz-toolbar select,
+.network-viz-toolbar input {
   min-width: 0;
 }
 
