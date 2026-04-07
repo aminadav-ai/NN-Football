@@ -1534,6 +1534,17 @@ class FootballMatch {
     };
     this.score = { A: 0, B: 0 };
     this.players = [];
+    this.teamPlayers = { A: [], B: [] };
+    this.goalSensorTargets = {
+      A: {
+        own: { x: 0, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 },
+        opp: { x: FIELD.width, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 },
+      },
+      B: {
+        own: { x: FIELD.width, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 },
+        opp: { x: 0, y: FIELD.height / 2, radius: FIELD.goalWidth / 2 },
+      },
+    };
     this.ballTrail = [];
     this.goalWidth = FIELD.goalWidth;
     this.setGoalWidth(config.goalWidth);
@@ -1580,6 +1591,12 @@ class FootballMatch {
     }
     this.goalTop = (FIELD.height - this.goalWidth) / 2;
     this.goalBottom = this.goalTop + this.goalWidth;
+
+    const goalRadius = this.goalWidth / 2;
+    this.goalSensorTargets.A.own.radius = goalRadius;
+    this.goalSensorTargets.A.opp.radius = goalRadius;
+    this.goalSensorTargets.B.own.radius = goalRadius;
+    this.goalSensorTargets.B.opp.radius = goalRadius;
   }
 
   addFitness(team, component, amount) {
@@ -1594,6 +1611,8 @@ class FootballMatch {
 
   spawnPlayers() {
     this.players = [];
+    this.teamPlayers.A = [];
+    this.teamPlayers.B = [];
     this.createTeam("A", this.individualA.network);
     this.createTeam("B", this.individualB.network);
   }
@@ -1610,7 +1629,7 @@ class FootballMatch {
       const x = team === "A" ? xBase : FIELD.width - xBase;
       const y = ((row + 1) * FIELD.height) / (rows + 1);
 
-      this.players.push({
+      const player = {
         team,
         network,
         x,
@@ -1620,7 +1639,11 @@ class FootballMatch {
         dir: team === "A" ? 0 : Math.PI,
         radius: FIELD.playerRadius,
         isTouchingBall: false,
-      });
+        visionInputs: new Float32Array(INPUT_SIZE),
+      };
+
+      this.players.push(player);
+      this.teamPlayers[team].push(player);
     }
   }
 
@@ -1685,21 +1708,20 @@ class FootballMatch {
   }
 
   collectVision(player) {
-    const teammates = this.players.filter((p) => p !== player && p.team === player.team);
-    const opponents = this.players.filter((p) => p.team !== player.team);
-    const ownGoalX = player.team === "A" ? 0 : FIELD.width;
-    const oppGoalX = player.team === "A" ? FIELD.width : 0;
-    const normalizedMatchTime = clamp(this.time / Math.max(this.duration, STEP_DT), 0, 1);
+    const inputs = player.visionInputs || (player.visionInputs = new Float32Array(INPUT_SIZE));
+    const teammates = player.team === "A" ? this.teamPlayers.A : this.teamPlayers.B;
+    const opponents = player.team === "A" ? this.teamPlayers.B : this.teamPlayers.A;
+    const goalTargets = this.goalSensorTargets[player.team];
 
-    return [
-      ...senseTargets(player, teammates),
-      ...senseTargets(player, opponents),
-      ...senseDirectionAndDistance(player, this.ball),
-      ...senseBoundaries(player),
-      ...senseDirectionAndDistance(player, { x: ownGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }),
-      ...senseDirectionAndDistance(player, { x: oppGoalX, y: FIELD.height / 2, radius: this.goalWidth / 2 }),
-      normalizedMatchTime,
-    ];
+    senseTargets(player, teammates, inputs, 0, player);
+    senseTargets(player, opponents, inputs, SENSOR_COUNT);
+    senseDirectionAndDistance(player, this.ball, inputs, SENSOR_COUNT * 2);
+    senseBoundaries(player, inputs, SENSOR_COUNT * 2 + 2);
+    senseDirectionAndDistance(player, goalTargets.own, inputs, SENSOR_COUNT * 3 + 2);
+    senseDirectionAndDistance(player, goalTargets.opp, inputs, SENSOR_COUNT * 3 + 4);
+    inputs[INPUT_SIZE - 1] = clamp(this.time / Math.max(this.duration, STEP_DT), 0, 1);
+
+    return inputs;
   }
 
   keepPlayerInBounds(player) {
@@ -2262,17 +2284,24 @@ class EvolutionTrainer {
       : [{ x: match.ball.x, y: match.ball.y }];
 
     if (Array.isArray(savedMatch.players) && savedMatch.players.length === match.players.length) {
-      match.players = savedMatch.players.map((player) => ({
-        team: player.team === "B" ? "B" : "A",
-        network: (player.team === "B" ? this.currentB : this.currentA).network,
-        x: Number(player.x) || 0,
-        y: Number(player.y) || 0,
-        vx: Number(player.vx) || 0,
-        vy: Number(player.vy) || 0,
-        dir: Number(player.dir) || 0,
-        radius: Number(player.radius) || FIELD.playerRadius,
-        isTouchingBall: Boolean(player.isTouchingBall),
-      }));
+      match.teamPlayers = { A: [], B: [] };
+      match.players = savedMatch.players.map((player) => {
+        const restoredPlayer = {
+          team: player.team === "B" ? "B" : "A",
+          network: (player.team === "B" ? this.currentB : this.currentA).network,
+          x: Number(player.x) || 0,
+          y: Number(player.y) || 0,
+          vx: Number(player.vx) || 0,
+          vy: Number(player.vy) || 0,
+          dir: Number(player.dir) || 0,
+          radius: Number(player.radius) || FIELD.playerRadius,
+          isTouchingBall: Boolean(player.isTouchingBall),
+          visionInputs: new Float32Array(INPUT_SIZE),
+        };
+
+        match.teamPlayers[restoredPlayer.team].push(restoredPlayer);
+        return restoredPlayer;
+      });
     }
 
     this.currentMatch = match;
@@ -2602,10 +2631,18 @@ class EvolutionTrainer {
   }
 }
 
-function senseTargets(player, targets) {
-  const sensors = Array(SENSOR_COUNT).fill(0);
+function senseTargets(player, targets, output = null, offset = 0, excludedTarget = null) {
+  const sensors = output || new Array(SENSOR_COUNT).fill(0);
+
+  for (let i = 0; i < SENSOR_COUNT; i += 1) {
+    sensors[offset + i] = 0;
+  }
 
   for (const target of targets) {
+    if (!target || target === excludedTarget) {
+      continue;
+    }
+
     const dx = target.x - player.x;
     const dy = target.y - player.y;
     const distance = Math.max(0, Math.hypot(dx, dy) - (target.radius || 0));
@@ -2616,15 +2653,19 @@ function senseTargets(player, targets) {
     const normalized = (angle + Math.PI) / (Math.PI * 2);
     const sector = Math.min(SENSOR_COUNT - 1, Math.floor(normalized * SENSOR_COUNT));
     const intensity = 1 - clamp(distance / MAX_SIGHT, 0, 1);
-    sensors[sector] = Math.max(sensors[sector], intensity);
+    const sensorIndex = offset + sector;
+    sensors[sensorIndex] = Math.max(sensors[sensorIndex], intensity);
   }
 
   return sensors;
 }
 
-function senseDirectionAndDistance(player, target) {
+function senseDirectionAndDistance(player, target, output = null, offset = 0) {
+  const sensors = output || [0, 1];
   if (!target) {
-    return [0, 1];
+    sensors[offset] = 0;
+    sensors[offset + 1] = 1;
+    return sensors;
   }
 
   const dx = target.x - player.x;
@@ -2632,19 +2673,18 @@ function senseDirectionAndDistance(player, target) {
   const distance = Math.max(0, Math.hypot(dx, dy) - (target.radius || 0));
   const angle = normalizeAngle(Math.atan2(dy, dx) - player.dir);
 
-  return [
-    clamp(angle / Math.PI, -1, 1),
-    clamp(distance / MAX_SIGHT, 0, 1),
-  ];
+  sensors[offset] = clamp(angle / Math.PI, -1, 1);
+  sensors[offset + 1] = clamp(distance / MAX_SIGHT, 0, 1);
+  return sensors;
 }
 
-function senseBoundaries(player) {
-  const sensors = Array(SENSOR_COUNT).fill(0);
+function senseBoundaries(player, output = null, offset = 0) {
+  const sensors = output || new Array(SENSOR_COUNT).fill(0);
 
   for (let i = 0; i < SENSOR_COUNT; i += 1) {
     const angle = player.dir - Math.PI + (i + 0.5) * ((Math.PI * 2) / SENSOR_COUNT);
     const distance = distanceToBoundary(player.x, player.y, angle);
-    sensors[i] = 1 - clamp(distance / MAX_SIGHT, 0, 1);
+    sensors[offset + i] = 1 - clamp(distance / MAX_SIGHT, 0, 1);
   }
 
   return sensors;
