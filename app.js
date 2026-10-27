@@ -60,8 +60,8 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Own goal" },
   { key: "total", label: "Total", total: true },
 ];
-const APP_ASSET_VERSION = "2026-04-07-1";
-const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
+const APP_ASSET_VERSION = "2026-10-27-1";
+const SETTINGS_STORAGE_KEY = "flower-3.settings.v2";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
@@ -165,7 +165,7 @@ const state = {
   pitchWidth: 550,
   pitchResize: null,
   savedPopulationData: null,
-  sidebarCollapsed: true,
+  sidebarCollapsed: false,
   isPaused: false,
   showTimeIndicator: true,
   showFieldStripes: true,
@@ -1527,7 +1527,7 @@ function setControlsFromConfig(config) {
   ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 1, 1, 4));
   ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 40, 4, 500));
   ui.populationSize.value = String(clamp(Number(config.populationSize) || 11, 4, 40));
-  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames ?? 30, config.populationSize ?? 11));
+  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames ?? 5, config.populationSize ?? 11));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 2), 1, 10));
   ui.goalWidth.value = String(normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth));
   ui.showTimeToggle.checked = config.showTimeIndicator !== false;
@@ -3903,7 +3903,7 @@ function readConfig() {
     hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 1, 1, 4),
     neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 40, 4, 500),
     populationSize: clamp(Number(ui.populationSize.value) || 11, 4, 40),
-    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value || 30, ui.populationSize.value || 11),
+    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value || 5, ui.populationSize.value || 11),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 2), 1, 10),
     goalWidth: normalizeGoalWidth(ui.goalWidth.value),
     speedPreset: state.speedPreset,
@@ -4978,4 +4978,5 @@ updateSaveStatus(null);
 applySidebarState();
 applyPitchWidth();
 updateStats();
+ui.startBtn.click();
 requestAnimationFrame(tick);

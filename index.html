@@ -7,15 +7,15 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell sidebar-collapsed" id="appShell">
+    <div class="app-shell" id="appShell">
       <button
         id="sidebarToggle"
         class="sidebar-toggle"
         type="button"
         aria-label="Show or hide sidebar"
         aria-controls="sidebarPanel"
-        aria-expanded="false"
-        title="Show sidebar"
+        aria-expanded="true"
+        title="Hide sidebar"
       >
         ☰
       </button>
@@ -46,7 +46,7 @@
 
           <label>
             Games per individual
-            <input id="tournamentGames" type="number" min="1" max="500" step="1" value="30" />
+            <input id="tournamentGames" type="number" min="1" max="500" step="1" value="5" />
           </label>
 
           <label>
