@@ -60,8 +60,8 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Own goal" },
   { key: "total", label: "Total", total: true },
 ];
-const APP_ASSET_VERSION = "2026-10-27-1";
-const SETTINGS_STORAGE_KEY = "flower-3.settings.v2";
+const APP_ASSET_VERSION = "2026-10-27-2";
+const SETTINGS_STORAGE_KEY = "flower-3.settings.v3";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
@@ -148,10 +148,10 @@ let networkVizCtx = ui.networkVizCanvas?.getContext("2d");
 const state = {
   showGames: true,
   stepsPerFrame: FAST_STEPS,
-  speedPreset: "fast",
+  speedPreset: "max",
   speedMultiplier: 0.25,
-  useMaxSpeed: false,
-  mode: "Fast",
+  useMaxSpeed: true,
+  mode: "Max",
   trainer: null,
   worker: null,
   workerStatus: null,
@@ -1549,9 +1549,9 @@ function setControlsFromConfig(config) {
     ui.networkVizPanel.hidden = !state.showEvolutionVisuals;
   }
   applySpeedState({
-    preset: config.speedPreset || (config.useMaxSpeed ? "max" : "fast"),
+    preset: config.speedPreset || (config.useMaxSpeed !== false ? "max" : "fast"),
     multiplier: config.speedMultiplier ?? 1,
-    useMaxSpeed: config.useMaxSpeed === true,
+    useMaxSpeed: config.useMaxSpeed !== false,
     notifyWorker: Boolean(state.worker),
     persist: false,
   });

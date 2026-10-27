@@ -63,7 +63,7 @@ const runtime = {
   showGames: true,
   showTimeIndicator: true,
   showFieldStripes: true,
-  useMaxSpeed: false,
+  useMaxSpeed: true,
   accumulator: 0,
   previousRenderMatch: null,
   currentRenderMatch: null,
@@ -2789,6 +2789,9 @@ self.onmessage = (event) => {
         runtime.previousRenderMatch = null;
         runtime.currentRenderMatch = null;
         runtime.lastNetworkVizVersionSent = null;
+        if (payload.config && Object.hasOwn(payload.config, "useMaxSpeed")) {
+          runtime.useMaxSpeed = Boolean(payload.config.useMaxSpeed);
+        }
         runtime.trainer.start(payload.config || {});
         runtime.currentRenderMatch = captureCurrentMatchState();
         runtime.lastTickAt = performance.now();
