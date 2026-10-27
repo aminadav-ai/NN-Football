@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Flower-3 — Эволюционный футбол</title>
+    <title>NN-Football — Neuroevolution Football Simulator</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -12,116 +12,116 @@
         id="sidebarToggle"
         class="sidebar-toggle"
         type="button"
-        aria-label="Показать или скрыть панель"
+        aria-label="Show or hide sidebar"
         aria-controls="sidebarPanel"
         aria-expanded="false"
-        title="Показать панель"
+        title="Show sidebar"
       >
         ☰
       </button>
       <aside class="panel controls" id="sidebarPanel">
-        <h1>Flower-3</h1>
-        <p class="subtitle">Эволюционное обучение нейросети игре в футбол</p>
+        <h1>NN-Football</h1>
+        <p class="subtitle">Neuroevolution training of neural network football agents</p>
 
         <div class="control-grid">
           <label>
-            Игроков в команде
+            Players per team
             <input id="teamSize" type="number" min="1" max="8" value="4" />
           </label>
 
           <label>
-            Слоёв центральных нейронов
+            Hidden layers
             <input id="hiddenLayers" type="number" min="1" max="4" value="1" />
           </label>
 
           <label>
-            Нейронов в слое
+            Neurons per layer
             <input id="neuronsPerLayer" type="number" min="4" max="500" value="40" />
           </label>
 
           <label>
-            Размер популяции
+            Population size
             <input id="populationSize" type="number" min="4" max="40" value="11" />
           </label>
 
           <label>
-            Игр на особь в турнире
+            Games per individual
             <input id="tournamentGames" type="number" min="1" max="500" step="1" value="30" />
           </label>
 
           <label>
-            Время матча (мин)
+            Match duration (min)
             <input id="matchMinutes" type="number" min="1" max="10" step="1" value="2" />
           </label>
 
           <label>
-            Размер ворот (м)
+            Goal width (m)
             <input id="goalWidth" type="number" min="6" max="40" step="1" value="20" />
           </label>
 
           <label>
-            Множитель скорости
+            Speed multiplier
             <input id="speedMultiplier" type="number" min="0.25" max="100" step="0.25" value="0.25" />
           </label>
 
           <label>
-            Вероятность кроссовера
+            Crossover rate
             <input id="crossoverRate" type="number" min="0" max="1" step="0.01" value="0.00" />
           </label>
 
           <label>
-            Вероятность мутации
+            Mutation rate
             <input id="mutationRate" type="number" min="0" max="1" step="0.01" value="0.01" />
           </label>
 
           <label>
-            Диапазон шума
+            Mutation noise range
             <input id="mutationAmount" type="number" min="0" max="2" step="0.01" value="0.28" />
           </label>
 
           <label>
-            Поколений в истории
+            History depth (generations)
             <input id="networkVizHistoryDepth" type="number" min="1" max="100" step="1" value="30" />
           </label>
 
           <label>
-            Автосохранение каждые (ч)
+            Auto-save every (h)
             <input id="autoSaveHours" type="number" min="0" max="168" step="0.1" value="0" />
           </label>
 
         </div>
 
         <div class="buttons">
-          <button id="startBtn" class="primary">Новое обучение</button>
-          <button id="saveFileBtn" class="secondary-action" disabled>Сохранить в файл</button>
-          <button id="loadFileBtn" class="secondary-action">Загрузить из файла</button>
-          <button id="slowBtn">Медленный режим</button>
-          <button id="fastBtn">Быстрый режим</button>
-          <button id="ultraBtn" class="ultra-btn">Ультра-быстрый</button>
-          <button id="maxBtn" class="max-btn">Без ограничений / Max</button>
-          <button id="showBtn">Показывать игры</button>
-          <button id="hideBtn">Скрывать игры</button>
+          <button id="startBtn" class="primary">New Training</button>
+          <button id="saveFileBtn" class="secondary-action" disabled>Save to File</button>
+          <button id="loadFileBtn" class="secondary-action">Load from File</button>
+          <button id="slowBtn">Slow Mode</button>
+          <button id="fastBtn">Fast Mode</button>
+          <button id="ultraBtn" class="ultra-btn">Ultra-Fast</button>
+          <button id="maxBtn" class="max-btn">Unlimited / Max</button>
+          <button id="showBtn">Show Matches</button>
+          <button id="hideBtn">Hide Matches</button>
         </div>
         <input id="loadFileInput" type="file" accept="application/json,.json" hidden />
-        <p id="saveStatus" class="save-status">Автосохранение в файл выключено.</p>
+        <p id="saveStatus" class="save-status">Auto-save to file is disabled.</p>
 
         <section class="legend fitness-settings">
-          <h2>Настройки фитнеса</h2>
+          <h2>Fitness Weights</h2>
           <div class="fitness-settings-grid">
             <label>
-              Гол сопернику
+              Goal scored
               <input id="fitnessGoal" type="number" step="0.1" value="1" />
             </label>
             <label>
-              Пропущенный гол
+              Goal conceded
               <input id="fitnessConceded" type="number" step="0.1" value="0" />
             </label>
             <label>
-              Автогол
+              Own goal
               <input id="fitnessOwnGoal" type="number" step="0.1" value="-0.01" />
             </label>
           </div>
-          <p class="fitness-settings-hint">Изменения применяются сразу и сохраняются вместе с поколением.</p>
+          <p class="fitness-settings-hint">Changes apply immediately and are saved with the generation.</p>
         </section>
       </aside>
 
@@ -129,37 +129,37 @@
         <div class="main-stage-row">
           <div class="pitch-column">
             <div class="pitch-stage" id="pitchStage">
-              <canvas id="pitch" width="1100" height="680" aria-label="Футбольное поле"></canvas>
+              <canvas id="pitch" width="1100" height="680" aria-label="Football pitch"></canvas>
             </div>
             <div class="match-controls">
-              <button id="pauseBtn" class="pause-btn">Пауза</button>
-              <button id="skipBtn" class="skip-btn">Пропустить матч</button>
+              <button id="pauseBtn" class="pause-btn">Pause</button>
+              <button id="skipBtn" class="skip-btn">Skip Match</button>
               <label class="overlay-toggle" for="showTimeToggle">
                 <input id="showTimeToggle" type="checkbox" checked />
-                <span>Показывать индикатор времени</span>
+                <span>Show time indicator</span>
               </label>
               <label class="overlay-toggle" for="showFieldStripesToggle">
                 <input id="showFieldStripesToggle" type="checkbox" checked />
-                <span>Показывать полосы на поле</span>
+                <span>Show pitch stripes</span>
               </label>
               <label class="overlay-toggle" for="showEvolutionVisualsToggle">
                 <input id="showEvolutionVisualsToggle" type="checkbox" checked />
-                <span>Показывать смену поколений и эволюцию сети</span>
+                <span>Show lineage & network evolution</span>
               </label>
               <label class="overlay-toggle" for="collectNetworkVizChangeHistoryToggle">
                 <input id="collectNetworkVizChangeHistoryToggle" type="checkbox" checked />
-                <span>Собирать поколения изменений связей и bias</span>
+                <span>Track weight & bias change history</span>
               </label>
             </div>
           </div>
 
-          <section class="fitness-panels" id="fitnessPanels" aria-label="Расшифровка фитнеса по командам">
+          <section class="fitness-panels" id="fitnessPanels" aria-label="Match fitness breakdown by team">
             <article class="fitness-card fitness-card-combined">
-              <h2>Расшифровка фитнеса за матч</h2>
+              <h2>Match Fitness Breakdown</h2>
               <table class="fitness-table fitness-table-combined">
                 <thead>
                   <tr>
-                    <th>Составляющая</th>
+                    <th>Component</th>
                     <th id="fitnessHeaderA">A</th>
                     <th id="fitnessHeaderB">B</th>
                   </tr>
@@ -169,25 +169,25 @@
             </article>
 
             <section class="stats stats-inline">
-              <h2>Состояние</h2>
+              <h2>Status</h2>
               <div class="stats-list">
-                <div><span>Поколение:</span> <strong id="generation">0</strong></div>
-                <div><span>Матч:</span> <strong id="matchInfo">—</strong></div>
-                <div><span>Игр/с (10с):</span> <strong id="gamesPerSecond">0.00</strong></div>
-                <div><span>Лучший в поколении:</span> <strong id="bestFitness">0.00</strong></div>
-                <div><span>Режим:</span> <strong id="modeInfo">Быстрый</strong></div>
-                <div><span>Отрисовка:</span> <strong id="renderInfo">Вкл.</strong></div>
+                <div><span>Generation:</span> <strong id="generation">0</strong></div>
+                <div><span>Match:</span> <strong id="matchInfo">—</strong></div>
+                <div><span>Games/s (10s):</span> <strong id="gamesPerSecond">0.00</strong></div>
+                <div><span>Best in gen:</span> <strong id="bestFitness">0.00</strong></div>
+                <div><span>Mode:</span> <strong id="modeInfo">Fast</strong></div>
+                <div><span>Rendering:</span> <strong id="renderInfo">On</strong></div>
               </div>
             </section>
           </section>
         </div>
 
         <div class="visualization-panels-row">
-          <section class="generation-flow-card" id="generationFlowPanel" aria-label="Визуализация смены особей по поколениям">
+          <section class="generation-flow-card" id="generationFlowPanel" aria-label="Lineage visualization across generations">
             <div class="generation-flow-header">
               <div>
-                <h2>Смена особей по поколениям</h2>
-                <p id="generationFlowStatus" class="generation-flow-status">История поколений появится после завершения первых матчей.</p>
+                <h2>Lineage Across Generations</h2>
+                <p id="generationFlowStatus" class="generation-flow-status">Generation history will appear after the first matches finish.</p>
               </div>
             </div>
             <div class="generation-flow-scroll" id="generationFlowScroll">
@@ -196,21 +196,21 @@
                 class="generation-flow-canvas"
                 width="1100"
                 height="280"
-                aria-label="Схема поколений и переходов особей"
+                aria-label="Generation lineage and individual transitions"
               ></canvas>
             </div>
             <div class="generation-flow-legend">
-              <span><i class="legend-swatch legend-swatch-base"></i>перенесённая особь</span>
-              <span><i class="legend-swatch legend-swatch-recent"></i>выбранная особь</span>
-              <span>• внутри кружка = мутант</span>
+              <span><i class="legend-swatch legend-swatch-base"></i>carried-over individual</span>
+              <span><i class="legend-swatch legend-swatch-recent"></i>selected individual</span>
+              <span>• dot inside circle = mutant</span>
             </div>
           </section>
 
-          <section class="network-viz-card" id="networkVizPanel" aria-label="Визуализация эволюции нейросети">
+          <section class="network-viz-card" id="networkVizPanel" aria-label="Neural network evolution visualization">
             <div class="network-viz-header">
               <div>
-                <h2>Эволюция нейросети</h2>
-                <p id="networkVizStatus" class="network-viz-status">Ожидание данных визуализации.</p>
+                <h2>Neural Network Evolution</h2>
+                <p id="networkVizStatus" class="network-viz-status">Waiting for visualization data.</p>
               </div>
             </div>
             <canvas
@@ -218,27 +218,27 @@
               class="network-viz-canvas"
               width="1100"
               height="420"
-              aria-label="Схема нейросети и изменений её связей"
+              aria-label="Neural network diagram and connection changes"
             ></canvas>
             <div class="network-viz-toolbar-row">
               <label class="network-viz-toolbar" for="networkVizMode">
-                <span>Режим визуализации</span>
-                <select id="networkVizMode" aria-label="Режим визуализации нейросети">
-                  <option value="direct">Отличия от родителя</option>
-                  <option value="heatmap">Тепловая карта изменений</option>
+                <span>Visualization mode</span>
+                <select id="networkVizMode" aria-label="Neural network visualization mode">
+                  <option value="direct">Diff from parent</option>
+                  <option value="heatmap">Change heatmap</option>
                 </select>
               </label>
               <label class="network-viz-toolbar" id="networkVizHeatmapDepthControl" for="networkVizHeatmapDepth" hidden>
-                <span>Показывать с поколения</span>
+                <span>Show from generation</span>
                 <input id="networkVizHeatmapDepth" type="number" min="1" max="1000000" step="1" value="1" />
               </label>
               <label class="network-viz-toolbar" id="networkVizHeatmapRangeControl" for="networkVizHeatmapRange" hidden>
-                <span>Глубина</span>
+                <span>Depth</span>
                 <input id="networkVizHeatmapRange" type="number" min="0" max="1000" step="1" value="10" />
               </label>
             </div>
             <div class="network-viz-legend">
-              <span id="networkVizLegendText"><i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)</span>
+              <span id="networkVizLegendText"><i class="legend-swatch legend-swatch-recent"></i>showing differences of the selected individual from its parent(s)</span>
             </div>
           </section>
         </div>

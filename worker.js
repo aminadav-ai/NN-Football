@@ -37,13 +37,13 @@ const DEFAULT_NETWORK_VIZ_HISTORY_DEPTH = 30;
 const NETWORK_VIZ_HISTORY_LIMIT = 100;
 const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_INPUT_GROUPS = [
-  { key: "teammates", label: "Свои", size: 8 },
-  { key: "opponents", label: "Чужие", size: 8 },
-  { key: "ball", label: "Мяч", size: 2 },
-  { key: "boundary", label: "Бордюр", size: 8 },
-  { key: "ownGoal", label: "Свои ворота", size: 2 },
-  { key: "oppGoal", label: "Чужие ворота", size: 2 },
-  { key: "time", label: "Время", size: 1 },
+  { key: "teammates", label: "Teammates", size: 8 },
+  { key: "opponents", label: "Opponents", size: 8 },
+  { key: "ball", label: "Ball", size: 2 },
+  { key: "boundary", label: "Boundary", size: 8 },
+  { key: "ownGoal", label: "Own Goal", size: 2 },
+  { key: "oppGoal", label: "Opp. Goal", size: 2 },
+  { key: "time", label: "Time", size: 1 },
 ];
 const HARD_COLLISION_THRESHOLD = 1.5;
 const TEAM_COLORS = {
@@ -388,7 +388,7 @@ function serializeNetwork(network) {
 
 function deserializeNetwork(data) {
   if (!data || !Array.isArray(data.layerSizes) || !Array.isArray(data.weights) || !Array.isArray(data.biases)) {
-    throw new Error("Некорректные данные нейросети.");
+    throw new Error("Invalid neural network data.");
   }
 
   const layerSizes = data.layerSizes.map((size) => Math.max(1, Math.floor(Number(size) || 0)));
@@ -823,7 +823,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
       return {
         key: "input",
-        label: "Входы",
+        label: "Inputs",
         actualCount: layerSizes[layerIndex],
         shownCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
         nodes: groups.flatMap((group) => group.nodes),
@@ -839,10 +839,10 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
         actualIndex,
         label: isOutputLayer
           ? localIndex === 0
-            ? "Ход"
+            ? "Move"
             : localIndex === 1
-              ? "Поворот"
-              : `Выход ${localIndex + 1}`
+              ? "Turn"
+              : `Output ${localIndex + 1}`
           : String(actualIndex + 1),
         biasKey,
         highlighted: activeConnections.has(biasKey),
@@ -852,7 +852,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
     return {
       key: isOutputLayer ? "output" : `hidden-${layerIndex}`,
-      label: isOutputLayer ? "Выходы" : `Скрытый слой ${layerIndex}`,
+      label: isOutputLayer ? "Outputs" : `Hidden layer ${layerIndex}`,
       actualCount: layerSizes[layerIndex],
       shownCount: nodes.length,
       nodes,
@@ -1236,12 +1236,12 @@ function drawMatch(match) {
   drawField();
 
   if (!match) {
-    drawCenterText("Ожидание запуска обучения");
+    drawCenterText("Waiting to start training");
     return;
   }
 
   if (!runtime.showGames) {
-    drawCenterText("Показ матчей отключён — обучение идёт в фоне");
+    drawCenterText("Match rendering off — training in background");
     return;
   }
 
@@ -1395,7 +1395,7 @@ function renderFrame(now) {
     drawMatch(matchForRender || runtime.currentRenderMatch);
     emitStatus(false);
   } catch (error) {
-    postMessage({ type: "error", message: `Ошибка worker-кадра: ${error instanceof Error ? error.message : String(error)}` });
+    postMessage({ type: "error", message: `Worker frame error: ${error instanceof Error ? error.message : String(error)}` });
   } finally {
     runtime.loopId = requestWorkerFrame(renderFrame);
   }
@@ -1580,7 +1580,7 @@ class FootballMatch {
     if (this.done || this.inAddedTime) return;
     this.inAddedTime = true;
     this.onEvent?.(
-      `Основное время истекло: матч ${this.individualA.id} vs ${this.individualB.id} переходит в дополнительную минуту до первого гола.`,
+      `Regular time expired: match ${this.individualA.id} vs ${this.individualB.id} goes into golden-goal extra minute.`,
     );
   }
 
@@ -1854,7 +1854,7 @@ class FootballMatch {
     }
 
     this.onEvent?.(
-      `Гол: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — счёт ${this.score.A}:${this.score.B}${endedInAddedTime ? " · матч завершён в дополнительное время" : ""}`,
+      `Goal: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — score ${this.score.A}:${this.score.B}${endedInAddedTime ? " · match ended in extra time" : ""}`,
     );
 
     if (endedInAddedTime) {
@@ -2125,7 +2125,7 @@ class EvolutionTrainer {
       }
 
       this.onLog(
-        `Загружено сохранение: поколение ${this.generation}, лучший фитнес ${this.bestFitness.toFixed(2)}.`,
+        `Save loaded: generation ${this.generation}, best fitness ${this.bestFitness.toFixed(2)}.`,
       );
       return;
     }
@@ -2137,7 +2137,7 @@ class EvolutionTrainer {
     this.prepareGeneration();
     emitSaveData(true);
     this.onLog(
-      `Старт нового обучения: популяция ${this.config.populationSize}, игроков ${this.config.teamSize}, матч ${this.config.matchMinutes} мин.`,
+      `New training started: population ${this.config.populationSize}, players ${this.config.teamSize}, match ${this.config.matchMinutes} min.`,
     );
   }
 
@@ -2444,13 +2444,13 @@ class EvolutionTrainer {
       this.currentMatch.setDurationMinutes(minutes);
 
       if (this.currentMatch.done) {
-        this.onLog(`Длительность снижена до ${minutes} мин. Текущий матч завершён досрочно.`);
+        this.onLog(`Match duration reduced to ${minutes} min. Current match ended early.`);
         this.completeCurrentMatch();
         return minutes;
       }
     }
 
-    this.onLog(`Длительность текущего и следующих матчей: ${minutes} мин.`);
+    this.onLog(`Duration of current and upcoming matches: ${minutes} min.`);
     return minutes;
   }
 
@@ -2469,7 +2469,7 @@ class EvolutionTrainer {
 
     if (this.currentMatch?.done) {
       this.completeCurrentMatch();
-      this.onLog(`Матч ${skippedLabel} пропущен. Открыт следующий матч.`);
+      this.onLog(`Match ${skippedLabel} skipped. Opened next match.`);
       return true;
     }
 

@@ -44,21 +44,21 @@ const NETWORK_VIZ_MODE_DIRECT = "direct";
 const NETWORK_VIZ_MODE_HEATMAP = "heatmap";
 const NETWORK_VIZ_MODE_DEFAULT = NETWORK_VIZ_MODE_DIRECT;
 const NETWORK_VIZ_INPUT_GROUPS = [
-  { key: "teammates", label: "Свои", size: 8 },
-  { key: "opponents", label: "Чужие", size: 8 },
-  { key: "ball", label: "Мяч", size: 2 },
-  { key: "boundary", label: "Бордюр", size: 8 },
-  { key: "ownGoal", label: "Свои ворота", size: 2 },
-  { key: "oppGoal", label: "Чужие ворота", size: 2 },
-  { key: "time", label: "Время", size: 1 },
+  { key: "teammates", label: "Teammates", size: 8 },
+  { key: "opponents", label: "Opponents", size: 8 },
+  { key: "ball", label: "Ball", size: 2 },
+  { key: "boundary", label: "Boundary", size: 8 },
+  { key: "ownGoal", label: "Own Goal", size: 2 },
+  { key: "oppGoal", label: "Opp. Goal", size: 2 },
+  { key: "time", label: "Time", size: 1 },
 ];
 const HARD_COLLISION_THRESHOLD = 1.5;
 const MAX_LOG_ENTRIES = 1000;
 const FITNESS_BREAKDOWN_ROWS = [
-  { key: "goals", label: "Гол сопернику" },
-  { key: "conceded", label: "Пропущенный гол" },
-  { key: "ownGoal", label: "Автогол" },
-  { key: "total", label: "Итого", total: true },
+  { key: "goals", label: "Goal scored" },
+  { key: "conceded", label: "Goal conceded" },
+  { key: "ownGoal", label: "Own goal" },
+  { key: "total", label: "Total", total: true },
 ];
 const APP_ASSET_VERSION = "2026-04-07-1";
 const SETTINGS_STORAGE_KEY = "flower-3.settings.v1";
@@ -151,7 +151,7 @@ const state = {
   speedPreset: "fast",
   speedMultiplier: 0.25,
   useMaxSpeed: false,
-  mode: "Быстрый",
+  mode: "Fast",
   trainer: null,
   worker: null,
   workerStatus: null,
@@ -306,7 +306,7 @@ async function runAutoSave() {
       return true;
     }
   } catch (error) {
-    console.error("Не удалось выполнить автосохранение:", error);
+    console.error("Auto-save failed:", error);
   } finally {
     state.autoSaveInProgress = false;
     scheduleAutoSave();
@@ -345,7 +345,7 @@ function saveSettingsToLocalStorage(config = readConfig()) {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(config));
     return true;
   } catch (error) {
-    console.warn("Не удалось сохранить настройки в localStorage:", error);
+    console.warn("Failed to save settings to localStorage:", error);
     return false;
   }
 }
@@ -364,7 +364,7 @@ function loadSettingsFromLocalStorage() {
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
   } catch (error) {
-    console.warn("Не удалось загрузить настройки из localStorage:", error);
+    console.warn("Failed to load settings from localStorage:", error);
     return null;
   }
 }
@@ -444,7 +444,7 @@ function handleWorkerMessage(event) {
 
   if (type === "error") {
     console.error("Worker error:", message);
-    addLog(`Ошибка Worker: ${message}`);
+    addLog(`Worker error: ${message}`);
   }
 }
 
@@ -456,8 +456,8 @@ function ensureWorker() {
   const worker = new Worker(new URL(`./worker.js?v=${APP_ASSET_VERSION}`, import.meta.url), { type: "module" });
   worker.addEventListener("message", handleWorkerMessage);
   worker.addEventListener("error", (event) => {
-    console.error("Не удалось запустить Worker:", event);
-    addLog("Ошибка запуска Worker. Симуляция не была перенесена в фоновый поток.");
+    console.error("Failed to start Worker:", event);
+    addLog("Failed to start Worker. Simulation was not moved to a background thread.");
   });
 
   if (state.useWorkerRenderer && !state.offscreenTransferred) {
@@ -481,7 +481,7 @@ function ensureWorker() {
       if (!ctx) {
         ctx = ui.canvas.getContext("2d");
       }
-      addLog("OffscreenCanvas недоступен — используется обычная отрисовка.");
+      addLog("OffscreenCanvas unavailable — using fallback rendering.");
     }
   } else if (!state.useWorkerRenderer && !ctx) {
     ctx = ui.canvas.getContext("2d");
@@ -673,7 +673,7 @@ function applySpeedState(options = {}) {
   state.stepsPerFrame = Math.max(1, Math.round(getBaseStepsForPreset(normalizedPreset) * effectiveMultiplier));
   state.mode = useMaxSpeed
     ? "Max"
-    : `${normalizedPreset === "slow" ? "Медленный" : normalizedPreset === "ultra" ? "Ультра-быстрый" : "Быстрый"}${multiplier !== 1 ? ` ×${formatMultiplier(multiplier)}` : ""}`;
+    : `${normalizedPreset === "slow" ? "Slow" : normalizedPreset === "ultra" ? "Ultra-Fast" : "Fast"}${multiplier !== 1 ? ` ×${formatMultiplier(multiplier)}` : ""}`;
 
   ui.speedMultiplier.value = formatMultiplier(multiplier);
 
@@ -1231,7 +1231,7 @@ function syncSelectedVisualizationFromTimeline(fallbackVisualization = null) {
         : null;
       syncNetworkVizHeatmapDefaultGeneration(state.networkVizData);
     } catch (error) {
-      console.warn("Не удалось восстановить fallback-визуализацию нейросети:", error);
+      console.warn("Failed to restore fallback neural network visualization:", error);
       state.networkVizData = null;
     }
   } else {
@@ -1284,7 +1284,7 @@ function selectGenerationTimelineIndividual(generation, individualId, options = 
   drawNetworkVisualization(state.networkVizData);
 
   if (options.log && changed) {
-    addLog(`Выбрана особь #${selected.id} из поколения G${selected.generation}.`);
+    addLog(`Selected individual #${selected.id} from generation G${selected.generation}.`);
   }
 
   return selected;
@@ -1338,16 +1338,16 @@ function drawGenerationFlow() {
   if (!timeline.length) {
     state.generationFlowHitboxes = [];
     if (ui.generationFlowStatus) {
-      ui.generationFlowStatus.textContent = "История поколений начнёт заполняться после завершения первого поколения.";
+      ui.generationFlowStatus.textContent = "Generation history will start populating after the first generation finishes.";
     }
     viz.fillStyle = "rgba(255, 255, 255, 0.86)";
     viz.font = `${Math.max(16, Math.round(18 * ratio))}px Inter, sans-serif`;
     viz.textAlign = "center";
     viz.textBaseline = "middle";
-    viz.fillText("История поколений пока пуста", width / 2, height / 2 - 10 * ratio);
+    viz.fillText("Generation history is empty", width / 2, height / 2 - 10 * ratio);
     viz.fillStyle = "rgba(155, 180, 200, 0.8)";
     viz.font = `${Math.max(12, Math.round(13 * ratio))}px Inter, sans-serif`;
-    viz.fillText("После завершения поколений здесь появятся столбики особей и стрелки переходов", width / 2, height / 2 + 16 * ratio);
+    viz.fillText("Columns of individuals and transition arrows will appear here after generations finish", width / 2, height / 2 + 16 * ratio);
     return;
   }
 
@@ -1359,16 +1359,16 @@ function drawGenerationFlow() {
 
   if (selected && ui.generationFlowStatus) {
     const parentText = selected.parentIds.length > 0
-      ? `родители: ${selected.parentIds.map((id) => `#${id}`).join(", ")}`
+      ? `parents: ${selected.parentIds.map((id) => `#${id}`).join(", ")}`
       : selected.createdBy === "initial"
-        ? "стартовая особь"
-        : "без родителей";
+        ? "initial individual"
+        : "no parents";
     const originText = selected.createdBy === "elite"
-      ? "прямой перенос"
+      ? "carried over"
       : selected.createdBy === "initial"
-        ? "исходная особь"
-        : "мутант";
-    ui.generationFlowStatus.textContent = `Поколений сохранено: ${timeline.length} · клик по кружку выбирает особь · сейчас #${selected.id} из G${selected.generation} · ${originText} · ${parentText}`;
+        ? "seed individual"
+        : "mutant";
+    ui.generationFlowStatus.textContent = `Generations saved: ${timeline.length} · click a circle to select an individual · current #${selected.id} from G${selected.generation} · ${originText} · ${parentText}`;
   }
 
   const maxRows = Math.max(1, ...timeline.map((entry) => entry.individuals.length));
@@ -1603,7 +1603,7 @@ function serializeNetwork(network) {
 
 function deserializeNetwork(data) {
   if (!data || !Array.isArray(data.layerSizes) || !Array.isArray(data.weights) || !Array.isArray(data.biases)) {
-    throw new Error("Некорректные данные нейросети.");
+    throw new Error("Invalid neural network data.");
   }
 
   const layerSizes = data.layerSizes.map((size) => Math.max(1, Math.floor(Number(size) || 0)));
@@ -2041,7 +2041,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
       return {
         key: "input",
-        label: "Входы",
+        label: "Inputs",
         actualCount: layerSizes[layerIndex],
         shownCount: groups.reduce((sum, group) => sum + group.nodes.length, 0),
         nodes: groups.flatMap((group) => group.nodes),
@@ -2057,10 +2057,10 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
         actualIndex,
         label: isOutputLayer
           ? localIndex === 0
-            ? "Ход"
+            ? "Move"
             : localIndex === 1
-              ? "Поворот"
-              : `Выход ${localIndex + 1}`
+              ? "Turn"
+              : `Output ${localIndex + 1}`
           : String(actualIndex + 1),
         biasKey,
         highlighted: activeConnections.has(biasKey),
@@ -2070,7 +2070,7 @@ function createNetworkVisualizationData(snapshot, historyEntries = [], version =
 
     return {
       key: isOutputLayer ? "output" : `hidden-${layerIndex}`,
-      label: isOutputLayer ? "Выходы" : `Скрытый слой ${layerIndex}`,
+      label: isOutputLayer ? "Outputs" : `Hidden layer ${layerIndex}`,
       actualCount: layerSizes[layerIndex],
       shownCount: nodes.length,
       nodes,
@@ -2185,18 +2185,18 @@ function updateSaveStatus(savedData = state.savedPopulationData, errorMessage = 
   }
 
   if (state.autoSaveHours > 0) {
-    const autoSaveText = `Автосохранение в файл каждые ${formatAutoSaveHours(state.autoSaveHours)} ч`;
+    const autoSaveText = `Auto-save to file every ${formatAutoSaveHours(state.autoSaveHours)} h`;
     const lastSavedText = state.lastAutoSaveAt
-      ? ` · последнее ${new Date(state.lastAutoSaveAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
-      : " · ожидание первого автосохранения";
+      ? ` · last saved ${new Date(state.lastAutoSaveAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`
+      : " · waiting for first auto-save";
     ui.saveStatus.textContent = `${autoSaveText}${lastSavedText}`;
     ui.saveStatus.classList.add("ready");
     return;
   }
 
   ui.saveStatus.textContent = savedData
-    ? "Автосохранение в файл выключено · состояние готово к сохранению в файл."
-    : "Автосохранение в файл выключено.";
+    ? "Auto-save is off · state is ready to be saved to a file."
+    : "Auto-save to file is disabled.";
   ui.saveStatus.classList.add("ready");
 }
 
@@ -2265,7 +2265,7 @@ function buildSavePayloadFromTrainer(trainer) {
 
 function applyLoadedPopulationPayload(payload) {
   if (!payload || !Array.isArray(payload.population) || payload.population.length === 0) {
-    throw new Error("Пустое сохранение.");
+    throw new Error("Empty save data.");
   }
 
   payload.pitchWidth = Number.isFinite(payload.pitchWidth) ? payload.pitchWidth : state.pitchWidth;
@@ -2352,7 +2352,7 @@ function savePopulation(source = state.workerSaveData || state.savedPopulationDa
   return true;
 }
 
-function startTrainingFromSavedData(savedData, sourceLabel = "браузера") {
+function startTrainingFromSavedData(savedData, sourceLabel = "browser storage") {
   if (!savedData) {
     return false;
   }
@@ -2370,7 +2370,7 @@ function startTrainingFromSavedData(savedData, sourceLabel = "браузера")
   state.selectedVisualizationIndividualId = null;
   state.networkVizHistoryOffset = 0;
   postToWorker("loadSaved", { config: readConfig(), savedData });
-  addLog(`Состояние обучения загружено из ${sourceLabel}.`);
+  addLog(`Training state loaded from ${sourceLabel}.`);
   return true;
 }
 
@@ -2589,7 +2589,7 @@ class FootballMatch {
     if (this.done || this.inAddedTime) return;
     this.inAddedTime = true;
     this.onEvent?.(
-      `Основное время истекло: матч ${this.individualA.id} vs ${this.individualB.id} переходит в дополнительную минуту до первого гола.`,
+      `Regular time expired: match ${this.individualA.id} vs ${this.individualB.id} goes into golden-goal extra minute.`,
     );
   }
 
@@ -2863,7 +2863,7 @@ class FootballMatch {
     }
 
     this.onEvent?.(
-      `Гол: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — счёт ${this.score.A}:${this.score.B}${endedInAddedTime ? " · матч завершён в дополнительное время" : ""}`,
+      `Goal: ${scoringTeam} (${this.individualA.id} vs ${this.individualB.id}) — score ${this.score.A}:${this.score.B}${endedInAddedTime ? " · match ended in extra time" : ""}`,
     );
 
     if (endedInAddedTime) {
@@ -3133,7 +3133,7 @@ class EvolutionTrainer {
       }
 
       this.onLog(
-        `Загружено сохранение: поколение ${this.generation}, лучший фитнес ${this.bestFitness.toFixed(2)}.`,
+        `Save loaded: generation ${this.generation}, best fitness ${this.bestFitness.toFixed(2)}.`,
       );
       return;
     }
@@ -3145,7 +3145,7 @@ class EvolutionTrainer {
     this.prepareGeneration();
     savePopulation(this);
     this.onLog(
-      `Старт нового обучения: популяция ${this.config.populationSize}, игроков ${this.config.teamSize}, матч ${this.config.matchMinutes} мин.`,
+      `New training started: population ${this.config.populationSize}, players ${this.config.teamSize}, match ${this.config.matchMinutes} min.`,
     );
   }
 
@@ -3453,13 +3453,13 @@ class EvolutionTrainer {
       this.currentMatch.setDurationMinutes(minutes);
 
       if (this.currentMatch.done) {
-        this.onLog(`Длительность снижена до ${minutes} мин. Текущий матч завершён досрочно.`);
+        this.onLog(`Match duration reduced to ${minutes} min. Current match ended early.`);
         this.completeCurrentMatch();
         return minutes;
       }
     }
 
-    this.onLog(`Длительность текущего и следующих матчей: ${minutes} мин.`);
+    this.onLog(`Duration of current and upcoming matches: ${minutes} min.`);
     return minutes;
   }
 
@@ -3478,7 +3478,7 @@ class EvolutionTrainer {
 
     if (this.currentMatch?.done) {
       this.completeCurrentMatch();
-      this.onLog(`Матч ${skippedLabel} пропущен. Открыт следующий матч.`);
+      this.onLog(`Match ${skippedLabel} skipped. Opened next match.`);
       return true;
     }
 
@@ -3538,7 +3538,7 @@ class EvolutionTrainer {
 
       if (leaderSnapshot) {
         this.onLog(
-          `Поколение ${this.generation}: лучший #${leaderSnapshot.id} с фитнесом ${leaderSnapshot.fitness.toFixed(2)}.`,
+          `Generation ${this.generation}: best #${leaderSnapshot.id} with fitness ${leaderSnapshot.fitness.toFixed(2)}.`,
         );
       }
     } else {
@@ -3549,7 +3549,7 @@ class EvolutionTrainer {
       this.networkVizHistoryOffset = 0;
 
       if (leader) {
-        this.onLog(`Поколение ${this.generation}: лучший #${leader.id} с фитнесом ${leader.fitness.toFixed(2)}.`);
+        this.onLog(`Generation ${this.generation}: best #${leader.id} with fitness ${leader.fitness.toFixed(2)}.`);
       }
     }
     this.markNetworkVisualizationDirty();
@@ -3802,14 +3802,14 @@ function resolveElasticCollision(a, b, elasticity = 0.9) {
 function applySidebarState() {
   ui.appShell.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
   ui.sidebarToggle.setAttribute("aria-expanded", String(!state.sidebarCollapsed));
-  ui.sidebarToggle.title = state.sidebarCollapsed ? "Показать панель" : "Скрыть панель";
+  ui.sidebarToggle.title = state.sidebarCollapsed ? "Show sidebar" : "Hide sidebar";
   ui.sidebarToggle.textContent = state.sidebarCollapsed ? "☰" : "✕";
 }
 
 function updatePlaybackControls() {
   const hasActiveTraining = Boolean(state.workerStatus?.running);
   ui.pauseBtn.disabled = !hasActiveTraining;
-  ui.pauseBtn.textContent = state.isPaused ? "Возобновить" : "Пауза";
+  ui.pauseBtn.textContent = state.isPaused ? "Resume" : "Pause";
   ui.skipBtn.hidden = state.stepsPerFrame !== SLOW_STEPS;
   ui.skipBtn.disabled = !hasActiveTraining || state.isPaused;
 }
@@ -3970,17 +3970,17 @@ function drawMatch(match) {
   drawField(match);
 
   if (!match) {
-    drawCenterText("Ожидание запуска обучения");
+    drawCenterText("Waiting to start training");
     return;
   }
 
   if (!state.showGames) {
-    drawCenterText("Показ матчей отключён — обучение идёт в фоне");
+    drawCenterText("Match rendering off — training in background");
     return;
   }
 
   if (!match.ball || !Array.isArray(match.players)) {
-    drawCenterText("Ожидание следующего кадра матча");
+    drawCenterText("Waiting for next match frame");
     return;
   }
 
@@ -4276,19 +4276,19 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.fillRect(0, 0, width, height);
 
   if (!data?.layers?.length) {
-    ui.networkVizStatus.textContent = "Запустите обучение, чтобы увидеть эволюцию связей лучшей особи.";
+    ui.networkVizStatus.textContent = "Start training to see the neural connection evolution of the best individual.";
     if (ui.networkVizLegendText) {
-      ui.networkVizLegendText.innerHTML = '<i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)';
+      ui.networkVizLegendText.innerHTML = '<i class="legend-swatch legend-swatch-recent"></i>showing differences of the selected individual from its parent(s)';
     }
     updateNetworkVizNavigation(null);
     viz.fillStyle = "rgba(255, 255, 255, 0.86)";
     viz.font = `${Math.max(16, Math.round(18 * ratio))}px Inter, sans-serif`;
     viz.textAlign = "center";
     viz.textBaseline = "middle";
-    viz.fillText("Ожидание данных нейросети", width / 2, height / 2 - 10 * ratio);
+    viz.fillText("Waiting for neural network data", width / 2, height / 2 - 10 * ratio);
     viz.fillStyle = "rgba(155, 180, 200, 0.8)";
     viz.font = `${Math.max(12, Math.round(13 * ratio))}px Inter, sans-serif`;
-    viz.fillText("Лучшие связи поколения появятся здесь автоматически", width / 2, height / 2 + 16 * ratio);
+    viz.fillText("Top generation connections will appear here automatically", width / 2, height / 2 + 16 * ratio);
     return;
   }
 
@@ -4301,13 +4301,13 @@ function drawNetworkVisualization(data = state.networkVizData) {
   const parentIds = normalizeParentIds(data.parentIds);
   const parentText = parentIds.length > 0
     ? parentIds.length === 1
-      ? `родитель #${parentIds[0]}`
-      : `родители ${parentIds.map((id) => `#${id}`).join(", ")}`
+      ? `parent #${parentIds[0]}`
+      : `parents ${parentIds.map((id) => `#${id}`).join(", ")}`
     : data.createdBy === "initial"
-      ? "стартовая особь"
+      ? "initial individual"
       : data.createdBy === "elite"
-        ? "клон без мутации"
-        : "родитель не сохранён";
+        ? "unmutated clone"
+        : "parent not stored";
   const mode = normalizeNetworkVizMode(state.networkVizMode);
   const isHeatmapMode = mode === NETWORK_VIZ_MODE_HEATMAP;
   const heatmapCollectionEnabled = normalizeNetworkVizChangeHistoryCollection(state.collectNetworkVizChangeHistory);
@@ -4331,23 +4331,23 @@ function drawNetworkVisualization(data = state.networkVizData) {
   const heatmapMinCount = getNetworkVizHeatmapCountThreshold(heatmapMaxCount, heatmapRange);
   const heatmapShownCount = heatmapCounts.filter((count) => count >= heatmapMinCount).length;
   const changeNote = availableHistory > 0 && Number(data.activeChangedCount || 0) === 0
-    ? " · новых отличий не найдено"
+    ? " · no new differences found"
     : "";
-  const heatmapRangeText = heatmapShownCount > 0 ? `${heatmapMinCount}–${heatmapMaxCount}` : `менее ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}`;
+  const heatmapRangeText = heatmapShownCount > 0 ? `${heatmapMinCount}–${heatmapMaxCount}` : `fewer than ${NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT}`;
   const heatmapNote = !heatmapCollectionEnabled
-    ? " · теплокарта: сбор поколений изменений связей и bias выключен"
+    ? " · heatmap: weight & bias change tracking is disabled"
     : heatmapShownCount > 0
-      ? ` · теплокарта: ${heatmapShownCount} элементов, начиная с G${heatmapDepth}, глубина ${heatmapRange}, диапазон ${heatmapRangeText}`
-      : ` · теплокарта: нет элементов в диапазоне ${heatmapRangeText} начиная с G${heatmapDepth} при глубине ${heatmapRange}`;
+      ? ` · heatmap: ${heatmapShownCount} elements, from G${heatmapDepth}, depth ${heatmapRange}, range ${heatmapRangeText}`
+      : ` · heatmap: no elements in range ${heatmapRangeText} from G${heatmapDepth} at depth ${heatmapRange}`;
   ui.networkVizStatus.textContent = isHeatmapMode
-    ? `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden}${heatmapNote}`
-    : `Выбрана особь: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · фитнес ${Number(data.bestFitness || 0).toFixed(2)} · скрытых нейронов показано ${shownHidden} · ${parentText}${changeNote}`;
+    ? `Selected individual: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · fitness ${Number(data.bestFitness || 0).toFixed(2)} · hidden neurons shown ${shownHidden}${heatmapNote}`
+    : `Selected individual: #${data.bestId ?? "—"} · G${subjectGeneration ?? "—"} · fitness ${Number(data.bestFitness || 0).toFixed(2)} · hidden neurons shown ${shownHidden} · ${parentText}${changeNote}`;
   if (ui.networkVizLegendText) {
     ui.networkVizLegendText.innerHTML = isHeatmapMode
       ? heatmapCollectionEnabled
-        ? `<i class="legend-swatch legend-swatch-recent"></i>краснее = связь или bias чаще менялись у успешной линии; показан диапазон ${heatmapRangeText} начиная с G${heatmapDepth}`
-        : '<i class="legend-swatch legend-swatch-recent"></i>сбор поколений изменений связей и bias сейчас выключен'
-      : '<i class="legend-swatch legend-swatch-recent"></i>показаны отличия выбранной особи от её родителя(ей)';
+        ? `<i class="legend-swatch legend-swatch-recent"></i>redder = weight or bias changed more frequently along the winning lineage; showing range ${heatmapRangeText} from G${heatmapDepth}`
+        : '<i class="legend-swatch legend-swatch-recent"></i>weight & bias change tracking is currently disabled'
+      : '<i class="legend-swatch legend-swatch-recent"></i>showing differences of the selected individual from its parent(s)';
   }
 
   const left = 116 * ratio;
@@ -4508,10 +4508,10 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.fillStyle = "rgba(154, 177, 195, 0.9)";
   viz.font = `${Math.max(10, Math.round(11 * ratio))}px Inter, sans-serif`;
   const historyLabel = isHeatmapMode
-    ? `Теплокарта · с G${heatmapDepth} · D${heatmapRange} · max ${heatmapMaxCount}`
+    ? `Heatmap · from G${heatmapDepth} · D${heatmapRange} · max ${heatmapMaxCount}`
     : subjectGeneration
       ? `G${subjectGeneration} · #${data.bestId ?? "—"}`
-      : "Выбор особи";
+      : "Selected individual";
   viz.fillText(historyLabel, width - 12 * ratio, 10 * ratio);
 }
 
@@ -4530,8 +4530,8 @@ function updateStats(frameTime = performance.now()) {
   ui.matchInfo.textContent = status.matchInfo;
   ui.gamesPerSecond.textContent = formatGamesPerSecond(status.gamesPerSecond);
   ui.bestFitness.textContent = Number(status.bestFitness || 0).toFixed(2);
-  ui.modeInfo.textContent = state.isPaused ? `${state.mode} · пауза` : state.mode;
-  ui.renderInfo.textContent = state.showGames ? "Вкл." : "Выкл.";
+  ui.modeInfo.textContent = state.isPaused ? `${state.mode} · paused` : state.mode;
+  ui.renderInfo.textContent = state.showGames ? "On" : "Off";
 
   if (!state.generationTimeline.length && status.networkViz) {
     state.networkVizData = selectNetworkVizHistoryEntry(status.networkViz, state.networkVizHistoryOffset);
@@ -4554,7 +4554,7 @@ function tick(timestamp) {
   try {
     updateStats(timestamp);
   } catch (error) {
-    console.error("Ошибка обновления интерфейса:", error);
+    console.error("UI update error:", error);
   } finally {
     requestAnimationFrame(tick);
   }
@@ -4587,14 +4587,14 @@ ui.startBtn.addEventListener("click", () => {
 ui.saveFileBtn.addEventListener("click", async () => {
   const savedData = await requestLatestSaveData();
   if (!savedData?.population?.length) {
-    addLog("Нет данных обучения для сохранения в файл.");
+    addLog("No training data available to save to file.");
     return;
   }
 
   savePopulation(savedData);
   const fileName = exportPopulationToFile(state.savedPopulationData || savedData);
   if (fileName) {
-    addLog(`Состояние обучения сохранено в файл: ${fileName}.`);
+    addLog(`Training state saved to file: ${fileName}.`);
   }
 });
 
@@ -4613,11 +4613,11 @@ ui.loadFileInput.addEventListener("change", async () => {
     const raw = await file.text();
     const payload = JSON.parse(raw);
     const savedData = applyLoadedPopulationPayload(payload);
-    startTrainingFromSavedData(savedData, `файла ${file.name}`);
+    startTrainingFromSavedData(savedData, `file ${file.name}`);
   } catch (error) {
-    console.error("Не удалось загрузить файл сохранения:", error);
-    updateSaveStatus(state.savedPopulationData, "Не удалось загрузить файл сохранения.");
-    addLog(`Ошибка загрузки файла: ${error instanceof Error ? error.message : String(error)}`);
+    console.error("Failed to load save file:", error);
+    updateSaveStatus(state.savedPopulationData, "Failed to load save file.");
+    addLog(`File load error: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     ui.loadFileInput.value = "";
   }
@@ -4646,19 +4646,19 @@ ui.speedMultiplier.addEventListener("change", () => {
 ui.showBtn.addEventListener("click", () => {
   state.showGames = true;
   postToWorker("updateConfig", { showGames: true });
-  addLog("Показ матчей включён.");
+  addLog("Match rendering enabled.");
 });
 
 ui.pauseBtn.addEventListener("click", () => {
   if (!state.workerStatus?.running) {
-    addLog("Сейчас нет активного обучения для паузы.");
+    addLog("No active training to pause.");
     return;
   }
 
   state.isPaused = !state.isPaused;
   postToWorker("setPaused", { isPaused: state.isPaused });
   updatePlaybackControls();
-  addLog(state.isPaused ? "Обучение поставлено на паузу." : "Обучение возобновлено.");
+  addLog(state.isPaused ? "Training paused." : "Training resumed.");
 });
 
 ui.showTimeToggle.addEventListener("change", () => {
@@ -4666,7 +4666,7 @@ ui.showTimeToggle.addEventListener("change", () => {
   postToWorker("updateConfig", { showTimeIndicator: state.showTimeIndicator });
   saveSettingsToLocalStorage();
   savePopulation();
-  addLog(state.showTimeIndicator ? "Индикатор времени матча включён." : "Индикатор времени матча скрыт.");
+  addLog(state.showTimeIndicator ? "Match time indicator enabled." : "Match time indicator hidden.");
 });
 
 ui.showFieldStripesToggle.addEventListener("change", () => {
@@ -4674,7 +4674,7 @@ ui.showFieldStripesToggle.addEventListener("change", () => {
   postToWorker("updateConfig", { showFieldStripes: state.showFieldStripes });
   saveSettingsToLocalStorage();
   savePopulation();
-  addLog(state.showFieldStripes ? "Полосы на поле включены." : "Полосы на поле скрыты.");
+  addLog(state.showFieldStripes ? "Pitch stripes enabled." : "Pitch stripes hidden.");
 });
 
 ui.showEvolutionVisualsToggle?.addEventListener("change", () => {
@@ -4706,8 +4706,8 @@ ui.showEvolutionVisualsToggle?.addEventListener("change", () => {
   savePopulation();
   addLog(
     state.showEvolutionVisuals
-      ? "Визуализация поколений и нейросети включена."
-      : "Визуализация поколений и нейросети скрыта: детальная история остановлена, а сбор данных теплокарты теперь зависит от отдельной галочки.",
+      ? "Lineage and neural network visualization enabled."
+      : "Lineage and neural network visualization hidden: detailed history paused, heatmap collection follows its own toggle.",
   );
 });
 
@@ -4748,8 +4748,8 @@ ui.collectNetworkVizChangeHistoryToggle?.addEventListener("change", () => {
   savePopulation();
   addLog(
     enabled
-      ? "Сбор поколений изменений связей и bias включён."
-      : "Сбор поколений изменений связей и bias выключен: история очищена и больше не сохраняется.",
+      ? "Weight and bias change tracking enabled."
+      : "Weight and bias change tracking disabled: history cleared.",
   );
 });
 
@@ -4772,8 +4772,8 @@ ui.crossoverRate?.addEventListener("change", () => {
   const crossoverRate = applyLiveCrossoverSettings();
   addLog(
     crossoverRate <= 0
-      ? "Кроссовер отключён: новые особи будут появляться только через мутацию выбранного родителя."
-      : `Вероятность кроссовера обновлена: ${crossoverRate.toFixed(2)}.`,
+      ? "Crossover disabled: new individuals will be produced by mutation only."
+      : `Crossover rate updated: ${crossoverRate.toFixed(2)}.`,
   );
 });
 
@@ -4783,7 +4783,7 @@ ui.crossoverRate?.addEventListener("change", () => {
 ].forEach((input) => {
   input.addEventListener("change", () => {
     const mutationSettings = applyLiveMutationSettings();
-    addLog(`Параметры мутации обновлены: вероятность ${mutationSettings.rate.toFixed(2)}, диапазон шума ${mutationSettings.amount.toFixed(2)}.`);
+    addLog(`Mutation settings updated: rate ${mutationSettings.rate.toFixed(2)}, noise range ${mutationSettings.amount.toFixed(2)}.`);
   });
 });
 
@@ -4830,7 +4830,7 @@ window.addEventListener("pagehide", () => {
 ui.hideBtn.addEventListener("click", () => {
   state.showGames = false;
   postToWorker("updateConfig", { showGames: false });
-  addLog("Показ матчей отключён.");
+  addLog("Match rendering disabled.");
 });
 
 ui.matchMinutes.addEventListener("change", () => {
@@ -4840,7 +4840,7 @@ ui.matchMinutes.addEventListener("change", () => {
   if (state.workerStatus?.running) {
     postToWorker("updateMatchDuration", { matchMinutes: minutes });
   } else {
-    addLog(`Длительность новых матчей установлена: ${minutes} мин.`);
+    addLog(`New match duration set to ${minutes} min.`);
   }
 
   saveSettingsToLocalStorage();
@@ -4858,7 +4858,7 @@ ui.goalWidth.addEventListener("change", () => {
 
   saveSettingsToLocalStorage();
   savePopulation();
-  addLog(`Размер ворот установлен: ${goalWidth} м.`);
+  addLog(`Goal width set to ${goalWidth} m.`);
 });
 
 ui.tournamentGames.addEventListener("change", () => {
@@ -4867,12 +4867,12 @@ ui.tournamentGames.addEventListener("change", () => {
 
   if (state.workerStatus?.running) {
     postToWorker("updateConfig", { tournamentGames });
-    addLog(`Минимум игр на особь в турнире: ${tournamentGames}. Расписание текущего поколения будет расширено при необходимости.`);
+    addLog(`Minimum games per individual: ${tournamentGames}. Current generation schedule will expand if needed.`);
   } else {
     if (state.trainer?.running) {
       state.trainer.updateTournamentGames(tournamentGames);
     }
-    addLog(`Минимум игр на особь в турнире: ${tournamentGames}.`);
+    addLog(`Minimum games per individual: ${tournamentGames}.`);
   }
 
   saveSettingsToLocalStorage();
@@ -4917,34 +4917,34 @@ ui.networkVizHistoryDepth?.addEventListener("change", () => {
 
   saveSettingsToLocalStorage();
   savePopulation();
-  addLog(`История визуализации ограничена последними ${historyDepth} поколениями.`);
+  addLog(`Visualization history limited to the last ${historyDepth} generations.`);
 });
 
 ui.networkVizMode?.addEventListener("change", () => {
   const { mode, heatmapDepth, heatmapRange } = applyLiveNetworkVizSettings();
   addLog(
     mode === NETWORK_VIZ_MODE_HEATMAP
-      ? `Визуализация нейросети переключена на теплокарту. Показ начиная с G${heatmapDepth}, глубина ${heatmapRange}.`
-      : "Визуализация нейросети показывает отличия от непосредственного родителя.",
+      ? `Neural network visualization switched to heatmap. Showing from G${heatmapDepth}, depth ${heatmapRange}.`
+      : "Neural network visualization showing differences from direct parent.",
   );
 });
 
 ui.networkVizHeatmapDepth?.addEventListener("change", () => {
   const { heatmapDepth, heatmapRange } = applyLiveNetworkVizSettings();
-  addLog(`Теплокарта теперь показывает изменения начиная с G${heatmapDepth} при глубине ${heatmapRange}.`);
+  addLog(`Heatmap now showing changes from G${heatmapDepth} at depth ${heatmapRange}.`);
 });
 
 ui.networkVizHeatmapRange?.addEventListener("change", () => {
   const { heatmapDepth, heatmapRange } = applyLiveNetworkVizSettings();
-  addLog(`Глубина теплокарты обновлена: ${heatmapRange} (начиная с G${heatmapDepth}).`);
+  addLog(`Heatmap depth updated: ${heatmapRange} (from G${heatmapDepth}).`);
 });
 
 ui.autoSaveHours?.addEventListener("change", () => {
   const autoSaveHours = applyAutoSaveSettings(ui.autoSaveHours.value, { persist: true, notifyWorker: true });
   addLog(
     autoSaveHours > 0
-      ? `Автосохранение включено: каждые ${formatAutoSaveHours(autoSaveHours)} ч.`
-      : "Автосохранение выключено.",
+      ? `Auto-save enabled: every ${formatAutoSaveHours(autoSaveHours)} h.`
+      : "Auto-save disabled.",
   );
 });
 
@@ -4961,7 +4961,7 @@ ui.autoSaveHours?.addEventListener("change", () => {
 
 ui.skipBtn.addEventListener("click", () => {
   if (!state.workerStatus?.running) {
-    addLog("Сейчас нет активного матча для пропуска.");
+    addLog("No active match to skip.");
     return;
   }
 
