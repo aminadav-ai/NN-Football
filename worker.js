@@ -1,18 +1,19 @@
 const FIELD = {
   width: 110,
   height: 68,
-  goalWidth: 20,
+  goalWidth: 22,
   playerRadius: 2,
   ballRadius: 1,
   pxPerMeter: 10,
 };
 
-const INPUT_SIZE = 31;
-const OUTPUT_SIZE = 2;
+const INPUT_SIZE = 24;
+const OUTPUT_SIZE = 4;
 const SENSOR_COUNT = 8;
 const MAX_SIGHT = 130;
-const MAX_PLAYER_SPEED = 12;
-const STEP_DT = 0.08;
+const MAX_PLAYER_SPEED = 17.5;
+const MAX_KICK_SPEED = 29.0;
+const STEP_DT = 0.05;
 const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const BALL_TRAIL_SPEED_THRESHOLD = 1.1;
@@ -1456,25 +1457,84 @@ class NeuralNetwork {
   }
 
   forward(inputs) {
-    let activations = [...inputs];
+    let activations = inputs;
+    const lastLayerIndex = this.weights.length - 1;
 
-    for (let layerIndex = 0; layerIndex < this.weights.length; layerIndex += 1) {
+    for (let layerIndex = 0; layerIndex <= lastLayerIndex; layerIndex += 1) {
       const layerWeights = this.weights[layerIndex];
       const layerBiases = this.biases[layerIndex];
       const next = new Array(layerWeights.length);
+      const isOutput = layerIndex === lastLayerIndex;
 
       for (let row = 0; row < layerWeights.length; row += 1) {
         let sum = layerBiases[row];
-        for (let col = 0; col < layerWeights[row].length; col += 1) {
-          sum += layerWeights[row][col] * activations[col];
+        const rowW = layerWeights[row];
+        for (let col = 0; col < rowW.length; col += 1) {
+          sum += rowW[col] * activations[col];
         }
-        next[row] = Math.tanh(sum);
+        next[row] = isOutput ? Math.tanh(sum) : (sum > 0 ? sum : 0.1 * sum);
       }
 
       activations = next;
     }
 
     return activations;
+  }
+
+  trainStep(inputs, target, lr = 0.002) {
+    const layerActs = [inputs];
+    const layerSums = [];
+    const lastLayerIndex = this.weights.length - 1;
+
+    for (let l = 0; l <= lastLayerIndex; l += 1) {
+      const w = this.weights[l];
+      const b = this.biases[l];
+      const prev = layerActs[l];
+      const sums = new Array(w.length);
+      const acts = new Array(w.length);
+      const isOut = l === lastLayerIndex;
+      for (let r = 0; r < w.length; r += 1) {
+        let s = b[r];
+        const row = w[r];
+        for (let c = 0; c < row.length; c += 1) s += row[c] * prev[c];
+        sums[r] = s;
+        acts[r] = isOut ? Math.tanh(s) : (s > 0 ? s : 0.1 * s);
+      }
+      layerSums.push(sums);
+      layerActs.push(acts);
+    }
+
+    const out = layerActs[lastLayerIndex + 1];
+    let deltas = new Array(out.length);
+    for (let i = 0; i < out.length; i += 1) {
+      const err = out[i] - target[i];
+      deltas[i] = 2 * err * (1 - out[i] * out[i]);
+    }
+
+    for (let l = lastLayerIndex; l >= 0; l -= 1) {
+      const w = this.weights[l];
+      const b = this.biases[l];
+      const prev = layerActs[l];
+      let prevDeltas = l > 0 ? new Array(prev.length).fill(0) : null;
+
+      for (let r = 0; r < w.length; r += 1) {
+        const d = clamp(deltas[r], -2, 2);
+        b[r] -= lr * d;
+        const row = w[r];
+        for (let c = 0; c < row.length; c += 1) {
+          if (prevDeltas) prevDeltas[c] += row[c] * d;
+          row[c] -= lr * d * prev[c];
+        }
+      }
+
+      if (prevDeltas) {
+        const sums = layerSums[l - 1];
+        for (let c = 0; c < prevDeltas.length; c += 1) {
+          prevDeltas[c] *= sums[c] > 0 ? 1 : 0.1;
+        }
+        deltas = prevDeltas;
+      }
+    }
   }
 
   crossover(other) {
@@ -1618,18 +1678,28 @@ class FootballMatch {
   }
 
   createTeam(team, network) {
-    const count = this.config.teamSize;
-    const columns = [16, 26, 36];
-    const rows = Math.ceil(count / columns.length);
+    const count = clamp(Number(this.config.teamSize) || 3, 1, 8);
+    const midX = FIELD.width / 2;
+    const midY = FIELD.height / 2;
+    const s = team === "A" ? 1 : -1;
+    const baseOffsets = [
+      { x: -12, y: 0 },
+      { x: -20, y: -15 },
+      { x: -34, y: 12 },
+      { x: -22, y: 15 },
+      { x: -36, y: -12 },
+      { x: -42, y: 0 },
+      { x: -16, y: -8 },
+      { x: -16, y: 8 },
+    ];
 
     for (let i = 0; i < count; i += 1) {
-      const row = i % rows;
-      const col = Math.floor(i / rows);
-      const xBase = columns[Math.min(col, columns.length - 1)];
-      const x = team === "A" ? xBase : FIELD.width - xBase;
-      const y = ((row + 1) * FIELD.height) / (rows + 1);
+      const off = baseOffsets[i % baseOffsets.length];
+      const x = clamp(midX + off.x * s + randRange(-1.5, 1.5), FIELD.playerRadius + 1, FIELD.width - FIELD.playerRadius - 1);
+      const y = clamp(midY + off.y * s + randRange(-1.5, 1.5), FIELD.playerRadius + 1, FIELD.height - FIELD.playerRadius - 1);
 
       const player = {
+        id: i,
         team,
         network,
         x,
@@ -1638,6 +1708,7 @@ class FootballMatch {
         vy: 0,
         dir: team === "A" ? 0 : Math.PI,
         radius: FIELD.playerRadius,
+        kickCooldown: 0,
         isTouchingBall: false,
         visionInputs: new Float32Array(INPUT_SIZE),
       };
@@ -1647,17 +1718,18 @@ class FootballMatch {
     }
   }
 
-  resetBallToCenter() {
+  resetBallToCenter(kickoffTeam = null) {
+    const dir = kickoffTeam === "A" ? 1 : kickoffTeam === "B" ? -1 : (random() < 0.5 ? 1 : -1);
     this.ball.x = FIELD.width / 2;
     this.ball.y = FIELD.height / 2;
-    this.ball.vx = randRange(-0.6, 0.6);
-    this.ball.vy = randRange(-0.6, 0.6);
+    this.ball.vx = dir * randRange(4, 8);
+    this.ball.vy = randRange(-6, 6);
     this.ball.lastTouchTeam = null;
     this.ballTrail = [{ x: this.ball.x, y: this.ball.y }];
   }
 
-  resetAfterGoal() {
-    this.resetBallToCenter();
+  resetAfterGoal(concedingTeam = null) {
+    this.resetBallToCenter(concedingTeam);
     this.spawnPlayers();
   }
 
@@ -1671,14 +1743,6 @@ class FootballMatch {
 
     for (const player of this.players) {
       this.controlPlayer(player, dt);
-    }
-
-    for (const player of this.players) {
-      player.x += player.vx * dt;
-      player.y += player.vy * dt;
-      player.vx *= 0.94;
-      player.vy *= 0.94;
-      this.keepPlayerInBounds(player);
     }
 
     this.handlePlayerCollisions();
@@ -1695,52 +1759,219 @@ class FootballMatch {
   }
 
   controlPlayer(player, dt) {
-    const inputs = this.collectVision(player);
-    const [throttleSignal, turnSignal] = player.network.forward(inputs);
-    const targetSpeed = clamp(throttleSignal, -1, 1) * MAX_PLAYER_SPEED;
-    player.dir = normalizeAngle(player.dir + clamp(turnSignal, -1, 1) * 2.4 * dt);
+    if (player.kickCooldown > 0) {
+      player.kickCooldown = Math.max(0, player.kickCooldown - dt);
+    }
 
-    const desiredVx = Math.cos(player.dir) * targetSpeed;
-    const desiredVy = Math.sin(player.dir) * targetSpeed;
+    const { inputs, target } = this.collectTacticalInputsAndExpert(player);
+    if (runtime.trainer && runtime.trainer.generation < 50 && random() < 0.35) {
+      player.network.trainStep(inputs, target, 0.0025);
+    }
+    const out = player.network.forward(inputs);
+    const s = player.team === "A" ? 1 : -1;
 
-    player.vx = lerp(player.vx, desiredVx, 0.22);
-    player.vy = lerp(player.vy, desiredVy, 0.22);
+    const targetVx = clamp(out[0] || 0, -1, 1) * s * MAX_PLAYER_SPEED;
+    const targetVy = clamp(out[1] || 0, -1, 1) * s * MAX_PLAYER_SPEED;
+    player.vx += (targetVx - player.vx) * Math.min(1, dt * 11);
+    player.vy += (targetVy - player.vy) * Math.min(1, dt * 11);
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
+    if (Math.hypot(player.vx, player.vy) > 0.4) {
+      player.dir = Math.atan2(player.vy, player.vx);
+    }
+    this.keepPlayerInBounds(player);
+
+    const dxB = this.ball.x - player.x;
+    const dyB = this.ball.y - player.y;
+    const distB = Math.hypot(dxB, dyB);
+    const kickReach = player.radius + this.ball.radius + 1.25;
+    if (distB < kickReach && player.kickCooldown <= 0) {
+      const kx = clamp(out[2] || 0, -1, 1) * s;
+      const ky = clamp(out[3] || 0, -1, 1) * s;
+      const kMag = Math.hypot(kx, ky);
+      if (kMag > 0.14) {
+        const kSpeed = clamp(kMag, 0.28, 1.0) * MAX_KICK_SPEED;
+        const ang = Math.atan2(ky, kx) + randRange(-0.04, 0.04);
+        this.ball.vx = Math.cos(ang) * kSpeed + player.vx * 0.15;
+        this.ball.vy = Math.sin(ang) * kSpeed + player.vy * 0.15;
+        player.kickCooldown = kMag > 0.6 ? 0.22 : 0.12;
+        this.ball.lastTouchTeam = player.team;
+        player.isTouchingBall = true;
+      }
+    }
   }
 
-  collectVision(player) {
+  collectTacticalInputsAndExpert(player) {
     const inputs = player.visionInputs || (player.visionInputs = new Float32Array(INPUT_SIZE));
     const teammates = player.team === "A" ? this.teamPlayers.A : this.teamPlayers.B;
     const opponents = player.team === "A" ? this.teamPlayers.B : this.teamPlayers.A;
-    const goalTargets = this.goalSensorTargets[player.team];
+    const s = player.team === "A" ? 1 : -1;
+    const cx = FIELD.width / 2;
+    const cy = FIELD.height / 2;
 
-    senseTargets(player, teammates, inputs, 0, player);
-    senseTargets(player, opponents, inputs, SENSOR_COUNT);
-    senseDirectionAndDistance(player, this.ball, inputs, SENSOR_COUNT * 2);
-    senseBoundaries(player, inputs, SENSOR_COUNT * 2 + 2);
-    senseDirectionAndDistance(player, goalTargets.own, inputs, SENSOR_COUNT * 3 + 2);
-    senseDirectionAndDistance(player, goalTargets.opp, inputs, SENSOR_COUNT * 3 + 4);
-    inputs[INPUT_SIZE - 1] = clamp(this.time / Math.max(this.duration, STEP_DT), 0, 1);
+    const px = (player.x - cx) * s;
+    const py = (player.y - cy) * s;
+    const pvx = player.vx * s;
+    const pvy = player.vy * s;
+    const bx = (this.ball.x - cx) * s;
+    const by = (this.ball.y - cy) * s;
+    const bvx = this.ball.vx * s;
+    const bvy = this.ball.vy * s;
 
-    return inputs;
+    const dxB = bx - px;
+    const dyB = by - py;
+    const distB = Math.hypot(dxB, dyB) || 0.001;
+    const canKick = distB < (player.radius + this.ball.radius + 1.35) ? 1 : 0;
+
+    const sortedByBall = [...teammates].sort(
+      (a, b) => Math.hypot(a.x - this.ball.x, a.y - this.ball.y) - Math.hypot(b.x - this.ball.x, b.y - this.ball.y),
+    );
+    let role = 1;
+    if (sortedByBall[0] === player) {
+      role = 0;
+    } else if (teammates.length >= 2) {
+      const others = sortedByBall.slice(1).sort((a, b) => ((a.x - cx) * s) - ((b.x - cx) * s));
+      if (others[0] === player) role = 2;
+    }
+
+    let bestMate = null;
+    let bestMateScore = -1e9;
+    for (const m of teammates) {
+      if (m === player) continue;
+      const mx = (m.x - cx) * s;
+      const my = (m.y - cy) * s;
+      const score = mx * 1.6 - Math.abs(my) * 0.15;
+      if (score > bestMateScore) {
+        bestMateScore = score;
+        bestMate = m;
+      }
+    }
+    const tx = bestMate ? (bestMate.x - cx) * s : px + 16;
+    const ty = bestMate ? (bestMate.y - cy) * s : -py;
+
+    let nearOpp = null;
+    let nearOppDist = 1e9;
+    let oppKeeperY = 0;
+    let maxOppX = -1e9;
+    for (const op of opponents) {
+      const ox = (op.x - cx) * s;
+      const oy = (op.y - cy) * s;
+      const d = Math.hypot(ox - px, oy - py);
+      if (d < nearOppDist) {
+        nearOppDist = d;
+        nearOpp = op;
+      }
+      if (ox > maxOppX) {
+        maxOppX = ox;
+        oppKeeperY = oy;
+      }
+    }
+    const ox = nearOpp ? (nearOpp.x - cx) * s : 55;
+    const oy = nearOpp ? (nearOpp.y - cy) * s : 0;
+    const openCornerSign = oppKeeperY >= 0 ? -1 : 1;
+
+    inputs[0] = clamp(px / 55, -1, 1);
+    inputs[1] = clamp(py / 34, -1, 1);
+    inputs[2] = clamp(pvx / MAX_PLAYER_SPEED, -1, 1);
+    inputs[3] = clamp(pvy / MAX_PLAYER_SPEED, -1, 1);
+    inputs[4] = clamp(dxB / 55, -1, 1);
+    inputs[5] = clamp(dyB / 34, -1, 1);
+    inputs[6] = dxB / distB;
+    inputs[7] = dyB / distB;
+    inputs[8] = clamp(1 - distB / 65, 0, 1);
+    inputs[9] = canKick;
+    inputs[10] = clamp(bvx / MAX_KICK_SPEED, -1, 1);
+    inputs[11] = clamp(bvy / MAX_KICK_SPEED, -1, 1);
+    inputs[12] = clamp((55 - bx) / 55, -1, 1);
+    inputs[13] = clamp((0 - by) / 34, -1, 1);
+    inputs[14] = clamp((-55 - px) / 55, -1, 1);
+    inputs[15] = clamp((0 - py) / 34, -1, 1);
+    inputs[16] = role === 0 ? 1 : 0;
+    inputs[17] = role === 1 ? 1 : 0;
+    inputs[18] = role === 2 ? 1 : 0;
+    inputs[19] = clamp((tx - px) / 55, -1, 1);
+    inputs[20] = clamp((ty - py) / 34, -1, 1);
+    inputs[21] = clamp((ox - px) / 55, -1, 1);
+    inputs[22] = clamp((oy - py) / 34, -1, 1);
+    inputs[23] = openCornerSign;
+
+    let desVx = 0, desVy = 0, kickX = 0, kickY = 0;
+    const goalAimY = openCornerSign * 8.2;
+    const gdx = 55 - bx, gdy = goalAimY - by;
+    const gDist = Math.hypot(gdx, gdy) || 1;
+    const uxGoal = gdx / gDist, uyGoal = gdy / gDist;
+
+    if (role === 0) {
+      const predBx = clamp(bx + bvx * 0.14, -51, 51);
+      const predBy = clamp(by + bvy * 0.14, -30, 30);
+      let targetX = predBx - uxGoal * 1.6;
+      let targetY = predBy - uyGoal * 1.6;
+      if (px > predBx + 0.4 && Math.abs(py - predBy) < 4.5) {
+        targetX = predBx - 3.5;
+        targetY = predBy + (py >= predBy ? 4.8 : -4.8);
+      }
+      const mdx = targetX - px, mdy = targetY - py;
+      const mDist = Math.hypot(mdx, mdy) || 1;
+      desVx = (mdx / mDist) * 0.98;
+      desVy = (mdy / mDist) * 0.98;
+      if (canKick) {
+        const oppPressing = ox > px - 1.5 && ox < px + 11 && Math.abs(oy - py) < 5.5;
+        const mateOpen = bestMate && tx > px + 4 && Math.hypot(tx - ox, ty - oy) > 5.5;
+        if (bx > 14) {
+          kickX = uxGoal;
+          kickY = uyGoal;
+        } else if (oppPressing && mateOpen) {
+          const pdx = clamp(tx + 6, -35, 46) - bx;
+          const pdy = clamp(ty, -26, 26) - by;
+          const pDist = Math.hypot(pdx, pdy) || 1;
+          kickX = (pdx / pDist) * 0.72;
+          kickY = (pdy / pDist) * 0.72;
+        } else {
+          const dodgeY = (py >= oy ? 1 : -1) * 0.35;
+          const ddx = uxGoal * 0.9, ddy = clamp(uyGoal + dodgeY, -0.8, 0.8);
+          const dLen = Math.hypot(ddx, ddy) || 1;
+          kickX = (ddx / dLen) * 0.42;
+          kickY = (ddy / dLen) * 0.42;
+        }
+      }
+    } else if (role === 1) {
+      const wingY = by >= 0 ? -15 : 15;
+      const targetX = clamp(bx + 16, -12, 40);
+      const targetY = clamp(wingY, -24, 24);
+      const mdx = targetX - px, mdy = targetY - py;
+      const mDist = Math.hypot(mdx, mdy) || 1;
+      const speedScale = clamp(mDist / 6, 0.3, 0.96);
+      desVx = (mdx / mDist) * speedScale;
+      desVy = (mdy / mDist) * speedScale;
+      if (canKick) {
+        kickX = uxGoal * 0.98;
+        kickY = uyGoal * 0.98;
+      }
+    } else {
+      const defX = bx < 0 ? clamp(bx * 0.4 - 24, -45, -16) : -28;
+      const defY = clamp(by * 0.38, -6.5, 6.5);
+      const mdx = defX - px, mdy = defY - py;
+      const mDist = Math.hypot(mdx, mdy) || 1;
+      const speedScale = clamp(mDist / 7, 0.2, 0.76);
+      desVx = (mdx / mDist) * speedScale;
+      desVy = (mdy / mDist) * speedScale;
+      if (canKick) {
+        const pdx = tx - bx, pdy = ty - by;
+        const pDist = Math.hypot(pdx, pdy) || 1;
+        kickX = (pdx / pDist) * 0.78;
+        kickY = (pdy / pDist) * 0.78;
+      }
+    }
+
+    return {
+      inputs,
+      target: [clamp(desVx, -1, 1), clamp(desVy, -1, 1), clamp(kickX, -1, 1), clamp(kickY, -1, 1)],
+    };
   }
 
   keepPlayerInBounds(player) {
-    if (player.x < player.radius) {
-      player.x = player.radius;
-      player.vx = Math.abs(player.vx) * 0.45;
-    }
-    if (player.x > FIELD.width - player.radius) {
-      player.x = FIELD.width - player.radius;
-      player.vx = -Math.abs(player.vx) * 0.45;
-    }
-    if (player.y < player.radius) {
-      player.y = player.radius;
-      player.vy = Math.abs(player.vy) * 0.45;
-    }
-    if (player.y > FIELD.height - player.radius) {
-      player.y = FIELD.height - player.radius;
-      player.vy = -Math.abs(player.vy) * 0.45;
-    }
+    player.x = clamp(player.x, player.radius, FIELD.width - player.radius);
+    player.y = clamp(player.y, player.radius, FIELD.height - player.radius);
   }
 
   handlePlayerCollisions() {
@@ -1748,14 +1979,24 @@ class FootballMatch {
       for (let j = i + 1; j < this.players.length; j += 1) {
         const a = this.players[i];
         const b = this.players[j];
-        resolveElasticCollision(a, b, 0.88);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.001;
+        const minD = a.radius + b.radius + 0.35;
+        if (d < minD) {
+          const overlap = (minD - d) * 0.5;
+          const ux = dx / d;
+          const uy = dy / d;
+          a.x = clamp(a.x - ux * overlap, a.radius, FIELD.width - a.radius);
+          a.y = clamp(a.y - uy * overlap, a.radius, FIELD.height - a.radius);
+          b.x = clamp(b.x + ux * overlap, b.radius, FIELD.width - b.radius);
+          b.y = clamp(b.y + uy * overlap, b.radius, FIELD.height - b.radius);
+        }
       }
     }
   }
 
   updateBall(dt) {
-    const touchingPlayers = new Set();
-
     for (const player of this.players) {
       const dx = this.ball.x - player.x;
       const dy = this.ball.y - player.y;
@@ -1763,41 +2004,56 @@ class FootballMatch {
       const minDistance = this.ball.radius + player.radius;
 
       if (distance < minDistance) {
-        touchingPlayers.add(player);
-        resolveElasticCollision(player, this.ball, 0.9);
-
-        const ballSpeed = Math.hypot(this.ball.vx, this.ball.vy);
-        const nearVerticalEdge = this.ball.x - this.ball.radius <= 0.75 || this.ball.x + this.ball.radius >= FIELD.width - 0.75;
-        const nearHorizontalEdge = this.ball.y - this.ball.radius <= 0.75 || this.ball.y + this.ball.radius >= FIELD.height - 0.75;
-        const ballPinnedOnBoundary = (nearVerticalEdge || nearHorizontalEdge) && ballSpeed < 0.6;
-
-        if (!player.isTouchingBall && !ballPinnedOnBoundary) {
-          this.ball.lastTouchTeam = player.team;
+        const ux = dx / distance;
+        const uy = dy / distance;
+        this.ball.x = player.x + ux * minDistance;
+        this.ball.y = player.y + uy * minDistance;
+        const relV = (this.ball.vx - player.vx) * ux + (this.ball.vy - player.vy) * uy;
+        if (relV < 0) {
+          this.ball.vx -= 1.3 * relV * ux;
+          this.ball.vy -= 1.3 * relV * uy;
         }
-
+        this.ball.lastTouchTeam = player.team;
         player.isTouchingBall = true;
-      }
-    }
-
-    for (const player of this.players) {
-      if (!touchingPlayers.has(player)) {
+      } else {
         player.isTouchingBall = false;
       }
     }
 
     this.ball.x += this.ball.vx * dt;
     this.ball.y += this.ball.vy * dt;
-    this.ball.vx *= 0.992;
-    this.ball.vy *= 0.992;
+    const drag = Math.pow(0.54, dt);
+    this.ball.vx *= drag;
+    this.ball.vy *= drag;
 
     if (this.ball.y - this.ball.radius <= 0) {
       this.ball.y = this.ball.radius;
-      this.ball.vy = Math.abs(this.ball.vy) * 0.9;
+      this.ball.vy = Math.abs(this.ball.vy) * 0.82;
     }
 
     if (this.ball.y + this.ball.radius >= FIELD.height) {
       this.ball.y = FIELD.height - this.ball.radius;
-      this.ball.vy = -Math.abs(this.ball.vy) * 0.9;
+      this.ball.vy = -Math.abs(this.ball.vy) * 0.82;
+    }
+
+    const cornerBevel = 5.0;
+    const corners = [
+      { cx: 0, cy: 0, nx: 0.707, ny: 0.707 },
+      { cx: FIELD.width, cy: 0, nx: -0.707, ny: 0.707 },
+      { cx: 0, cy: FIELD.height, nx: 0.707, ny: -0.707 },
+      { cx: FIELD.width, cy: FIELD.height, nx: -0.707, ny: -0.707 },
+    ];
+    for (const c of corners) {
+      const distC = Math.hypot(this.ball.x - c.cx, this.ball.y - c.cy);
+      if (distC < cornerBevel) {
+        this.ball.x = c.cx + c.nx * cornerBevel;
+        this.ball.y = c.cy + c.ny * cornerBevel;
+        const dot = this.ball.vx * c.nx + this.ball.vy * c.ny;
+        if (dot < 4) {
+          this.ball.vx += (6 - dot) * c.nx;
+          this.ball.vy += (6 - dot) * c.ny;
+        }
+      }
     }
 
     if (this.ball.x - this.ball.radius <= 0) {
@@ -1807,7 +2063,7 @@ class FootballMatch {
       }
 
       this.ball.x = this.ball.radius;
-      this.ball.vx = Math.abs(this.ball.vx) * 0.9;
+      this.ball.vx = Math.abs(this.ball.vx) * 0.82;
     }
 
     if (this.ball.x + this.ball.radius >= FIELD.width) {
@@ -1817,7 +2073,7 @@ class FootballMatch {
       }
 
       this.ball.x = FIELD.width - this.ball.radius;
-      this.ball.vx = -Math.abs(this.ball.vx) * 0.9;
+      this.ball.vx = -Math.abs(this.ball.vx) * 0.82;
     }
 
     this.recordBallTrail();

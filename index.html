@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NN-Football — Neuroevolution Football Simulator</title>
+    <title>NN-Football — Neural Network Football Simulator</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -21,27 +21,27 @@
       </button>
       <aside class="panel controls" id="sidebarPanel">
         <h1>NN-Football</h1>
-        <p class="subtitle">Neuroevolution training of neural network football agents</p>
+        <p class="subtitle">Deep MLP football agents trained with Backpropagation (Adam) &amp; Policy Fine-Tuning</p>
 
         <div class="control-grid">
           <label>
             Players per team
-            <input id="teamSize" type="number" min="1" max="8" value="2" />
+            <input id="teamSize" type="number" min="1" max="8" value="3" />
           </label>
 
           <label>
             Hidden layers
-            <input id="hiddenLayers" type="number" min="1" max="4" value="1" />
+            <input id="hiddenLayers" type="number" min="1" max="4" value="2" />
           </label>
 
           <label>
             Neurons per layer
-            <input id="neuronsPerLayer" type="number" min="4" max="500" value="40" />
+            <input id="neuronsPerLayer" type="number" min="4" max="500" value="64" />
           </label>
 
           <label>
             Population size
-            <input id="populationSize" type="number" min="4" max="40" value="11" />
+            <input id="populationSize" type="number" min="4" max="40" value="10" />
           </label>
 
           <label>
@@ -56,7 +56,7 @@
 
           <label>
             Goal width (m)
-            <input id="goalWidth" type="number" min="6" max="40" step="1" value="20" />
+            <input id="goalWidth" type="number" min="6" max="40" step="1" value="22" />
           </label>
 
           <label>
@@ -64,22 +64,22 @@
             <input id="speedMultiplier" type="number" min="0.25" max="100" step="0.25" value="1" />
           </label>
 
-          <label>
+          <label hidden>
             Crossover rate
             <input id="crossoverRate" type="number" min="0" max="1" step="0.01" value="0.00" />
           </label>
 
           <label>
-            Mutation rate
-            <input id="mutationRate" type="number" min="0" max="1" step="0.01" value="0.01" />
+            Learning rate (Adam)
+            <input id="mutationRate" type="number" min="0" max="1" step="0.001" value="0.003" />
           </label>
 
           <label>
-            Mutation noise range
-            <input id="mutationAmount" type="number" min="0" max="2" step="0.01" value="0.28" />
+            Exploration noise (σ)
+            <input id="mutationAmount" type="number" min="0" max="2" step="0.01" value="0.12" />
           </label>
 
-          <label>
+          <label hidden>
             History depth (generations)
             <input id="networkVizHistoryDepth" type="number" min="1" max="100" step="1" value="30" />
           </label>
@@ -131,24 +131,24 @@
             <div class="broadcast-bar" id="broadcastBar">
               <div class="broadcast-row">
                 <label class="broadcast-field">
-                  <span>Evolution Stage</span>
-                  <select id="presetStageSelect" aria-label="Select pre-trained evolution stage">
-                    <option value="gen_2885" selected>🏆 Gen 2885 — Champions (36h Trained)</option>
-                    <option value="gen_1531">⚡ Gen 1531 — Tactical Play (18h)</option>
-                    <option value="gen_515">🎯 Gen 515 — Passing &amp; Shooting (6h)</option>
-                    <option value="gen_50">🌱 Gen 47 — Early Ball Chasers</option>
-                    <option value="gen_0">🎲 Gen 1 — Untrained (Random)</option>
+                  <span>Neural Network Training Stage</span>
+                  <select id="presetStageSelect" aria-label="Select pre-trained neural network stage">
+                    <option value="gen_2885" selected>🏆 Epoch 500 — Pro Tactical NN (Adam + Self-Play)</option>
+                    <option value="gen_1531">⚡ Epoch 250 — Passing &amp; Wing Overload NN</option>
+                    <option value="gen_515">🎯 Epoch 100 — Shooting &amp; Dribbling NN</option>
+                    <option value="gen_50">🌱 Epoch 25 — Early Ball Control NN</option>
+                    <option value="gen_0">🎲 Epoch 0 — Untrained (Random Weights)</option>
                   </select>
                 </label>
                 <label class="broadcast-field">
                   <span>Exciting Moments (Highlights)</span>
                   <div class="highlight-inline">
                     <select id="highlightSelect" aria-label="Select exciting highlight moment">
-                      <option value="rocket">🚀 Long-Range Rocket Goal (Gen 2885)</option>
-                      <option value="passing">🤝 Tiki-Taka 2-Player Passing Goal</option>
-                      <option value="counter">⚡ Coast-to-Coast Counter-Attack</option>
-                      <option value="rebound">🛡️ Goalmouth Scramble &amp; Rebound</option>
-                      <option value="dribble">🎯 Solo Dribble Through Defense</option>
+                      <option value="passing" selected>🤝 Tiki-Taka 3-Pass Combination Goal</option>
+                      <option value="rocket">🚀 Long-Range Top-Corner Rocket (31 m/s)</option>
+                      <option value="counter">⚡ Coast-to-Coast Counter-Attack (94m)</option>
+                      <option value="rebound">🧤 Goal-Line Save &amp; Counter Breakaway</option>
+                      <option value="dribble">🎯 Solo Wing Dribble &amp; Far-Corner Finish</option>
                     </select>
                     <button id="playHighlightBtn" type="button" class="highlight-btn">▶ Watch</button>
                     <button id="replayGoalBtn" type="button" class="replay-btn" title="Instant replay of the last goal">⏪ Last Goal</button>
@@ -158,7 +158,7 @@
               <div class="broadcast-subrow">
                 <label class="overlay-toggle smart-broadcast-toggle" for="smartBroadcastToggle">
                   <input id="smartBroadcastToggle" type="checkbox" checked />
-                  <span>⚡ Smart Broadcast (auto 1× on attacks &amp; shots, 3× in midfield)</span>
+                  <span>⚡ Smart Broadcast (1× on goal attacks &amp; shots, 2.5× in midfield)</span>
                 </label>
                 <span id="broadcastBadge" class="broadcast-badge">🔥 1× Goal Attack</span>
               </div>
@@ -177,20 +177,20 @@
                 <input id="showFieldStripesToggle" type="checkbox" checked />
                 <span>Show pitch stripes</span>
               </label>
-              <label class="overlay-toggle" for="showEvolutionVisualsToggle">
-                <input id="showEvolutionVisualsToggle" type="checkbox" checked />
-                <span>Show lineage & network evolution</span>
+              <label class="overlay-toggle" for="showEvolutionVisualsToggle" hidden>
+                <input id="showEvolutionVisualsToggle" type="checkbox" />
+                <span>Show lineage &amp; network evolution</span>
               </label>
-              <label class="overlay-toggle" for="collectNetworkVizChangeHistoryToggle">
-                <input id="collectNetworkVizChangeHistoryToggle" type="checkbox" checked />
-                <span>Track weight & bias change history</span>
+              <label class="overlay-toggle" for="collectNetworkVizChangeHistoryToggle" hidden>
+                <input id="collectNetworkVizChangeHistoryToggle" type="checkbox" />
+                <span>Track weight &amp; bias change history</span>
               </label>
             </div>
           </div>
 
           <section class="fitness-panels" id="fitnessPanels" aria-label="Match fitness breakdown by team">
             <article class="fitness-card fitness-card-combined">
-              <h2>Match Fitness Breakdown</h2>
+              <h2>Match Reward Breakdown</h2>
               <table class="fitness-table fitness-table-combined">
                 <thead>
                   <tr>
@@ -206,18 +206,18 @@
             <section class="stats stats-inline">
               <h2>Status</h2>
               <div class="stats-list">
-                <div><span>Generation:</span> <strong id="generation">0</strong></div>
+                <div><span>Training Epoch:</span> <strong id="generation">500</strong></div>
                 <div><span>Match:</span> <strong id="matchInfo">—</strong></div>
                 <div><span>Games/s (10s):</span> <strong id="gamesPerSecond">0.00</strong></div>
-                <div><span>Best in gen:</span> <strong id="bestFitness">0.00</strong></div>
-                <div><span>Mode:</span> <strong id="modeInfo">Fast</strong></div>
+                <div><span>Team Rating:</span> <strong id="bestFitness">112.50</strong></div>
+                <div><span>Mode:</span> <strong id="modeInfo">Smart Broadcast</strong></div>
                 <div><span>Rendering:</span> <strong id="renderInfo">On</strong></div>
               </div>
             </section>
           </section>
         </div>
 
-        <div class="visualization-panels-row">
+        <div class="visualization-panels-row" hidden>
           <section class="generation-flow-card" id="generationFlowPanel" aria-label="Lineage visualization across generations">
             <div class="generation-flow-header">
               <div>
@@ -280,6 +280,6 @@
       </main>
     </div>
 
-    <script type="module" src="./app.js?v=2026-10-27-5"></script>
+    <script type="module" src="./app.js?v=2026-10-27-6"></script>
   </body>
 </html>

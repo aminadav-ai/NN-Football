@@ -1,18 +1,19 @@
 const FIELD = {
   width: 110,
   height: 68,
-  goalWidth: 20,
+  goalWidth: 22,
   playerRadius: 2,
   ballRadius: 1,
   pxPerMeter: 10,
 };
 
-const INPUT_SIZE = 31;
-const OUTPUT_SIZE = 2;
+const INPUT_SIZE = 24;
+const OUTPUT_SIZE = 4;
 const SENSOR_COUNT = 8;
 const MAX_SIGHT = 130;
-const MAX_PLAYER_SPEED = 12;
-const STEP_DT = 0.08;
+const MAX_PLAYER_SPEED = 17.5;
+const MAX_KICK_SPEED = 29.0;
+const STEP_DT = 0.05;
 const FAST_STEPS = 24;
 const ULTRA_STEPS = 120;
 const SLOW_STEPS = 1;
@@ -60,8 +61,8 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Own goal" },
   { key: "total", label: "Total", total: true },
 ];
-const APP_ASSET_VERSION = "2026-10-27-5";
-const SETTINGS_STORAGE_KEY = "flower-3.settings.v5";
+const APP_ASSET_VERSION = "2026-10-27-6";
+const SETTINGS_STORAGE_KEY = "flower-3.settings.v6";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
@@ -175,14 +176,14 @@ const state = {
   workerSaveData: null,
   pendingSaveRequest: null,
   lastFrameTime: null,
-  pitchWidth: 550,
+  pitchWidth: 740,
   pitchResize: null,
   savedPopulationData: null,
   sidebarCollapsed: true,
   isPaused: false,
   showTimeIndicator: true,
   showFieldStripes: true,
-  showEvolutionVisuals: true,
+  showEvolutionVisuals: false,
   useWorkerRenderer: supportsOffscreenCanvas,
   offscreenTransferred: false,
   generationTimeline: [],
@@ -1535,11 +1536,11 @@ function updateMatchFitnessTables(match) {
 function setControlsFromConfig(config) {
   if (!config) return;
 
-  ui.teamSize.value = String(clamp(Number(config.teamSize) || 4, 1, 8));
-  ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 1, 1, 4));
-  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 40, 4, 500));
-  ui.populationSize.value = String(clamp(Number(config.populationSize) || 11, 4, 40));
-  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames ?? 5, config.populationSize ?? 11));
+  ui.teamSize.value = String(clamp(Number(config.teamSize) || 3, 1, 8));
+  ui.hiddenLayers.value = String(clamp(Number(config.hiddenLayers) || 2, 1, 4));
+  ui.neuronsPerLayer.value = String(clamp(Number(config.neuronsPerLayer) || 64, 4, 500));
+  ui.populationSize.value = String(clamp(Number(config.populationSize) || 10, 4, 40));
+  ui.tournamentGames.value = String(normalizeTournamentGames(config.tournamentGames ?? 5, config.populationSize ?? 10));
   ui.matchMinutes.value = String(clamp(Math.round(Number(config.matchMinutes) || 2), 1, 10));
   ui.goalWidth.value = String(normalizeGoalWidth(config.goalWidth ?? FIELD.goalWidth));
   ui.showTimeToggle.checked = config.showTimeIndicator !== false;
@@ -1547,13 +1548,13 @@ function setControlsFromConfig(config) {
   ui.showFieldStripesToggle.checked = config.showFieldStripes !== false;
   state.showFieldStripes = ui.showFieldStripesToggle.checked;
   if (ui.showEvolutionVisualsToggle) {
-    ui.showEvolutionVisualsToggle.checked = config.showEvolutionVisuals !== false;
+    ui.showEvolutionVisualsToggle.checked = false;
   }
-  state.showEvolutionVisuals = config.showEvolutionVisuals !== false;
+  state.showEvolutionVisuals = false;
   if (ui.collectNetworkVizChangeHistoryToggle) {
-    ui.collectNetworkVizChangeHistoryToggle.checked = normalizeNetworkVizChangeHistoryCollection(config.collectNetworkVizChangeHistory);
+    ui.collectNetworkVizChangeHistoryToggle.checked = false;
   }
-  state.collectNetworkVizChangeHistory = normalizeNetworkVizChangeHistoryCollection(config.collectNetworkVizChangeHistory);
+  state.collectNetworkVizChangeHistory = false;
   if (ui.generationFlowPanel) {
     ui.generationFlowPanel.hidden = !state.showEvolutionVisuals;
   }
@@ -2478,19 +2479,22 @@ class NeuralNetwork {
   }
 
   forward(inputs) {
-    let activations = [...inputs];
+    let activations = inputs;
+    const lastLayerIndex = this.weights.length - 1;
 
-    for (let layerIndex = 0; layerIndex < this.weights.length; layerIndex += 1) {
+    for (let layerIndex = 0; layerIndex <= lastLayerIndex; layerIndex += 1) {
       const layerWeights = this.weights[layerIndex];
       const layerBiases = this.biases[layerIndex];
       const next = new Array(layerWeights.length);
+      const isOutput = layerIndex === lastLayerIndex;
 
       for (let row = 0; row < layerWeights.length; row += 1) {
         let sum = layerBiases[row];
-        for (let col = 0; col < layerWeights[row].length; col += 1) {
-          sum += layerWeights[row][col] * activations[col];
+        const rowW = layerWeights[row];
+        for (let col = 0; col < rowW.length; col += 1) {
+          sum += rowW[col] * activations[col];
         }
-        next[row] = Math.tanh(sum);
+        next[row] = isOutput ? Math.tanh(sum) : (sum > 0 ? sum : 0.1 * sum);
       }
 
       activations = next;
@@ -3912,11 +3916,11 @@ function stopPitchResize() {
 
 function readConfig() {
   return {
-    teamSize: clamp(Number(ui.teamSize.value) || 4, 1, 8),
-    hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 1, 1, 4),
-    neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 40, 4, 500),
-    populationSize: clamp(Number(ui.populationSize.value) || 11, 4, 40),
-    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value || 5, ui.populationSize.value || 11),
+    teamSize: clamp(Number(ui.teamSize.value) || 3, 1, 8),
+    hiddenLayers: clamp(Number(ui.hiddenLayers.value) || 2, 1, 4),
+    neuronsPerLayer: clamp(Number(ui.neuronsPerLayer.value) || 64, 4, 500),
+    populationSize: clamp(Number(ui.populationSize.value) || 10, 4, 40),
+    tournamentGames: normalizeTournamentGames(ui.tournamentGames.value || 5, ui.populationSize.value || 10),
     matchMinutes: clamp(Math.round(Number(ui.matchMinutes.value) || 2), 1, 10),
     goalWidth: normalizeGoalWidth(ui.goalWidth.value),
     speedPreset: state.speedPreset,
@@ -3924,8 +3928,8 @@ function readConfig() {
     useMaxSpeed: state.useMaxSpeed,
     showTimeIndicator: ui.showTimeToggle.checked,
     showFieldStripes: ui.showFieldStripesToggle.checked,
-    showEvolutionVisuals: ui.showEvolutionVisualsToggle?.checked !== false,
-    collectNetworkVizChangeHistory: normalizeNetworkVizChangeHistoryCollection(ui.collectNetworkVizChangeHistoryToggle?.checked),
+    showEvolutionVisuals: false,
+    collectNetworkVizChangeHistory: false,
     fitnessSettings: readFitnessSettings(),
     crossoverRate: normalizeCrossoverRate(ui.crossoverRate?.value),
     mutationSettings: readMutationSettings(),
@@ -4649,18 +4653,18 @@ function updateSmartBroadcast(match, frameTime) {
     return;
   }
 
-  let targetSteps = 1.15;
+  let targetSteps = 1.35;
   if (stallMs > 1400) {
     targetSteps = 10;
     ui.broadcastBadge.textContent = "⏩ 10× Unstalling";
     ui.broadcastBadge.className = "broadcast-badge midfield";
   } else if (nearGoal || bSpeed > 4.0) {
-    targetSteps = 1.15;
+    targetSteps = 1.35;
     ui.broadcastBadge.textContent = "🔥 1× Goal Attack";
     ui.broadcastBadge.className = "broadcast-badge";
   } else {
-    targetSteps = 2.8;
-    ui.broadcastBadge.textContent = "⚡ 2.8× Midfield";
+    targetSteps = 2.6;
+    ui.broadcastBadge.textContent = "⚡ 2.6× Midfield";
     ui.broadcastBadge.className = "broadcast-badge midfield";
   }
 
@@ -5144,7 +5148,7 @@ ui.skipBtn.addEventListener("click", () => {
 
 function playHighlightClip(clip) {
   if (!clip?.frames?.length) return;
-  const frameDurationMs = 66;
+  const frameDurationMs = 46;
   state.activeReplay = {
     clip,
     startedAt: performance.now(),

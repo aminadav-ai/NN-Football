@@ -1,4 +1,4 @@
-# ⚽ NN-Football — 2D Neuroevolution Football Simulator
+# ⚽ NN-Football — 2D Neural Network Football Simulator
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-10b981?style=for-the-badge&logo=github&logoColor=white)](https://aminadav-ai.github.io/NN-Football/)
 [![JavaScript](https://img.shields.io/badge/Vanilla_JS-ES_Modules-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
@@ -8,28 +8,27 @@
 
 **Live Demo:** [https://aminadav-ai.github.io/NN-Football/](https://aminadav-ai.github.io/NN-Football/)
 
-`NN-Football` is a zero-dependency browser simulation where teams of autonomous agents learn to play 2D football from scratch through **neuroevolution** (custom feed-forward neural networks + genetic algorithms). All physics, sensor raycasting, tournament scheduling, and evolutionary operators run inside a background **Web Worker** (`OffscreenCanvas`) for high-throughput training.
+`NN-Football` is a zero-dependency browser simulation where 3v3 teams of autonomous neural network agents play fast-paced 2D futsal. Each player is controlled by a custom feed-forward **Deep MLP (`24 → 64 → 64 → 4` with `LeakyReLU` + `tanh`)** trained with **Backpropagation (`Adam` optimizer)** and **self-play policy fine-tuning** inside a background **Web Worker**.
 
 ---
 
 ## 📸 Screenshots
 
-### 1. Live Match Pitch, Lineage Graph & Neural Network Change Heatmap
-![Pitch, Lineage and Neural Network Evolution](./docs/screenshots/01_pitch_and_evolution.png)
+### 1. Live 3v3 Tactical Match & Smart Broadcast Bar
+![Live 3v3 Match and Smart Broadcast Bar](./docs/screenshots/01_pitch_and_evolution.png)
 
-### 2. Selected Individual Lineage & Cumulative Mutation Heatmap (Close-Up)
-![Lineage Tree and Neural Network Change Heatmap](./docs/screenshots/02_sidebar_controls.png)
+### 2. Highlight Replay & Neural Network Controls
+![Highlight Replay and Controls](./docs/screenshots/02_sidebar_controls.png)
 
 ---
 
 ## ✨ Key Features
 
-- **36-Hour Pre-Trained Evolution Checkpoints (`Gen 1` to `Gen 2885`):** Launches directly into a **36-hour evolved championship population (`Gen 2885`)** at watchable real-time speed, with a stage selector to compare `Gen 1 (Untrained)`, `Gen 47 (Ball Chasers)`, `Gen 515 (Passing & Shooting)`, `Gen 1531 (Tactical Play)`, and `Gen 2885 (Champions)`.
-- **⚡ Smart Broadcast Director:** Automatically fast-forwards low-action midfield play (`2.8×`) and unstalls corner scrums while smoothly dropping to **`1×` real-time speed** whenever players launch an attack or take a high-speed shot near either goal.
-- **🔥 Highlight Reel & Instant Goal Replay:** Watch 5 curated highlight moments captured from `Gen 2885` championship matches (*Long-Range Rocket Goal*, *Tiki-Taka 2-Player Passing Goal*, *Coast-to-Coast Counter-Attack*, *Goalmouth Scramble*, *Solo Dribble*) or click **`⏪ Last Goal`** at any time for an instant replay of the most recent live goal.
-- **Custom Neural Network & Genetic Algorithm Engine:** Written from scratch in vanilla JavaScript without external ML libraries. Configurable hidden layers, neurons per layer, population size, tournament games per individual, crossover rate, and Gaussian mutation noise.
-- **Interactive Lineage Tree & Change Heatmap:** Inspect any generation in the bottom-left lineage graph and view the **Change Heatmap** on the right to see which synapses mutated most frequently along the winning evolutionary lineage (`G1`–`G2885`).
-- **Live Fitness Shaping & JSON Persistence:** Tune reward weights (goals scored, goals conceded, own goals) in real time and export/import full population snapshots as JSON files.
+- **Pre-Trained Neural Network Stages (`Epoch 0` to `Epoch 500`):** Launches directly into a **500-epoch `Adam`-trained tactical neural network (`Epoch 500`)** at watchable real-time speed, with a stage selector to compare `Epoch 0 (Untrained Random Weights)`, `Epoch 25 (Early Ball Control)`, `Epoch 100 (Shooting & Dribbling)`, `Epoch 250 (Passing & Wing Overload)`, and `Epoch 500 (Pro Tactical NN)`.
+- **Dynamic Tactical Roles & Omnidirectional Ball Physics:** Agents receive 24 ego-centric normalized inputs (relative ball position/velocity, teammate & opponent vectors, open goal corner, and dynamic role encoding `[Attacker, Support Winger, Sweeper]`) and output 4 continuous actions `(vx, vy, kickX, kickY)` for close-control dribbling, diagonal lead passes, and top-corner finishes.
+- **⚡ Smart Broadcast Director:** Automatically fast-forwards midfield build-up (`2.6×`) while smoothly dropping to **`1×` real-time speed** whenever players launch a goal attack or fire a shot.
+- **🎬 Curated Highlight Reel & Instant Goal Replay:** Watch 5 tactical highlights (*Tiki-Taka 3-Pass Combination Goal*, *Long-Range Top-Corner Rocket*, *Coast-to-Coast Counter-Attack*, *Goal-Line Save & Counter Breakaway*, *Solo Wing Dribble & Far-Corner Finish*) or click **`⏪ Last Goal`** at any time for an instant replay of the most recent live goal.
+- **Custom Zero-Dependency Neural Network Engine:** Written from scratch in vanilla JavaScript (ES Modules + Web Worker) with online backpropagation (`trainStep`), reward shaping, and JSON checkpoint export/import.
 
 ---
 
