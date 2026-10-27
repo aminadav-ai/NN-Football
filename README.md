@@ -24,11 +24,12 @@
 
 ## ✨ Key Features
 
+- **36-Hour Pre-Trained Evolution Checkpoints (`Gen 1` to `Gen 2885`):** Launches directly into a **36-hour evolved championship population (`Gen 2885`)** at watchable real-time speed, with a stage selector to compare `Gen 1 (Untrained)`, `Gen 47 (Ball Chasers)`, `Gen 515 (Passing & Shooting)`, `Gen 1531 (Tactical Play)`, and `Gen 2885 (Champions)`.
+- **⚡ Smart Broadcast Director:** Automatically fast-forwards low-action midfield play (`2.8×`) and unstalls corner scrums while smoothly dropping to **`1×` real-time speed** whenever players launch an attack or take a high-speed shot near either goal.
+- **🔥 Highlight Reel & Instant Goal Replay:** Watch 5 curated highlight moments captured from `Gen 2885` championship matches (*Long-Range Rocket Goal*, *Tiki-Taka 2-Player Passing Goal*, *Coast-to-Coast Counter-Attack*, *Goalmouth Scramble*, *Solo Dribble*) or click **`⏪ Last Goal`** at any time for an instant replay of the most recent live goal.
 - **Custom Neural Network & Genetic Algorithm Engine:** Written from scratch in vanilla JavaScript without external ML libraries. Configurable hidden layers, neurons per layer, population size, tournament games per individual, crossover rate, and Gaussian mutation noise.
-- **Background Web Worker & Multi-Speed Training:** Runs match simulations in a dedicated Web Worker (`worker.js`) with `OffscreenCanvas` rendering. Switch on the fly between **Slow**, **Fast**, **Ultra-Fast**, and **Unlimited / Max** headless training modes.
-- **Interactive Lineage Tree Across Generations:** Inspect any generation and click individual nodes to trace elite carry-overs, parent-child transitions, and mutants.
-- **Neural Network Evolution Visualizer:** Compare a selected individual's weights and biases directly against its parent(s) or switch to the **Change Heatmap** mode to highlight which synapses mutated most frequently along the winning evolutionary lineage.
-- **Live Fitness Shaping & State Persistence:** Tune reward weights (goals scored, goals conceded, own goals) in real time and export/import full population snapshots as JSON files.
+- **Interactive Lineage Tree & Change Heatmap:** Inspect any generation in the bottom-left lineage graph and view the **Change Heatmap** on the right to see which synapses mutated most frequently along the winning evolutionary lineage (`G1`–`G2885`).
+- **Live Fitness Shaping & JSON Persistence:** Tune reward weights (goals scored, goals conceded, own goals) in real time and export/import full population snapshots as JSON files.
 
 ---
 

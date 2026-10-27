@@ -37,7 +37,7 @@ const NETWORK_VIZ_EPSILON = 1e-6;
 const NETWORK_VIZ_HEATMAP_MIN_VISIBLE_COUNT = 2;
 const DEFAULT_NETWORK_VIZ_HEATMAP_DEPTH = 1;
 const MAX_NETWORK_VIZ_HEATMAP_DEPTH = 1000000;
-const DEFAULT_NETWORK_VIZ_HEATMAP_RANGE = 10;
+const DEFAULT_NETWORK_VIZ_HEATMAP_RANGE = 6;
 const MAX_NETWORK_VIZ_HEATMAP_RANGE = 1000;
 const NETWORK_VIZ_CHANGE_HISTORY_LIMIT = 20;
 const NETWORK_VIZ_MODE_DIRECT = "direct";
@@ -60,8 +60,8 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Own goal" },
   { key: "total", label: "Total", total: true },
 ];
-const APP_ASSET_VERSION = "2026-10-27-3";
-const SETTINGS_STORAGE_KEY = "flower-3.settings.v4";
+const APP_ASSET_VERSION = "2026-10-27-5";
+const SETTINGS_STORAGE_KEY = "flower-3.settings.v5";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
@@ -136,22 +136,35 @@ const ui = {
   renderInfo: document.getElementById("renderInfo"),
   saveStatus: document.getElementById("saveStatus"),
   log: document.getElementById("log"),
+  presetStageSelect: document.getElementById("presetStageSelect"),
+  highlightSelect: document.getElementById("highlightSelect"),
+  playHighlightBtn: document.getElementById("playHighlightBtn"),
+  replayGoalBtn: document.getElementById("replayGoalBtn"),
+  smartBroadcastToggle: document.getElementById("smartBroadcastToggle"),
+  broadcastBadge: document.getElementById("broadcastBadge"),
 };
 
-const preferSafeMainThreadRenderer = typeof navigator !== "undefined"
-  && /Linux/i.test([navigator.userAgent || "", navigator.platform || ""].join(" "));
-const supportsOffscreenCanvas = !preferSafeMainThreadRenderer && typeof ui.canvas.transferControlToOffscreen === "function";
+const preferSafeMainThreadRenderer = true;
+const supportsOffscreenCanvas = false;
 let ctx = supportsOffscreenCanvas ? null : ui.canvas.getContext("2d");
 let generationFlowCtx = ui.generationFlowCanvas?.getContext("2d");
 let networkVizCtx = ui.networkVizCanvas?.getContext("2d");
 
 const state = {
   showGames: true,
-  stepsPerFrame: FAST_STEPS,
-  speedPreset: "max",
-  speedMultiplier: 0.25,
-  useMaxSpeed: true,
-  mode: "Max",
+  stepsPerFrame: SLOW_STEPS,
+  speedPreset: "slow",
+  speedMultiplier: 1,
+  useMaxSpeed: false,
+  mode: "Slow",
+  smartBroadcast: true,
+  lastSmartSteps: 1,
+  ballStallSince: 0,
+  highlights: [],
+  activeReplay: null,
+  liveReplayBuffer: [],
+  lastGoalReplay: null,
+  lastRecordedScore: { matchKey: "", A: 0, B: 0, lastSampleTime: -1 },
   trainer: null,
   worker: null,
   workerStatus: null,
@@ -165,7 +178,7 @@ const state = {
   pitchWidth: 550,
   pitchResize: null,
   savedPopulationData: null,
-  sidebarCollapsed: false,
+  sidebarCollapsed: true,
   isPaused: false,
   showTimeIndicator: true,
   showFieldStripes: true,
@@ -738,9 +751,8 @@ function normalizeNetworkVizHeatmapRange(value) {
   return clamp(Math.round(toFiniteNumber(value, DEFAULT_NETWORK_VIZ_HEATMAP_RANGE)), 0, MAX_NETWORK_VIZ_HEATMAP_RANGE);
 }
 
-function getDefaultNetworkVizHeatmapGeneration(generation) {
-  const normalizedGeneration = Math.max(1, Math.floor(Number(generation) || 1));
-  return Math.max(1, normalizedGeneration - 20);
+function getDefaultNetworkVizHeatmapGeneration(_generation) {
+  return 1;
 }
 
 function getNetworkVizHeatmapCountThreshold(maxCount, depth = state.networkVizHeatmapRange) {
@@ -2369,6 +2381,7 @@ function startTrainingFromSavedData(savedData, sourceLabel = "browser storage") 
   state.selectedVisualizationGeneration = null;
   state.selectedVisualizationIndividualId = null;
   state.networkVizHistoryOffset = 0;
+  applyVisualizationPayload(savedData);
   postToWorker("loadSaved", { config: readConfig(), savedData });
   addLog(`Training state loaded from ${sourceLabel}.`);
   return true;
@@ -3986,8 +3999,8 @@ function drawMatch(match) {
 
   const ballSpeed = Math.hypot(match.ball.vx, match.ball.vy);
   if (
-    state.stepsPerFrame === FAST_STEPS &&
     ballSpeed >= BALL_TRAIL_SPEED_THRESHOLD &&
+    Array.isArray(match.ballTrail) &&
     match.ballTrail.length > 1
   ) {
     for (let i = 1; i < match.ballTrail.length; i += 1) {
@@ -4111,6 +4124,28 @@ function drawMatch(match) {
     ctx.lineWidth = 1;
     ctx.strokeRect(timeBarX, timeBarY, timeBarWidth, timeBarHeight);
   }
+
+  if (state.activeReplay?.clip) {
+    const clip = state.activeReplay.clip;
+    const progress = clamp((performance.now() - state.activeReplay.startedAt) / Math.max(1, state.activeReplay.totalDurationMs), 0, 1);
+    const label = `🎬 HIGHLIGHT REPLAY · ${clip.badge || clip.title}`;
+    ctx.font = "bold 20px Inter, sans-serif";
+    const textW = Math.ceil(ctx.measureText(label).width);
+    const boxW = textW + 28;
+    const boxH = 40;
+    const boxX = ui.canvas.width - boxW - 14;
+    const boxY = 14;
+
+    ctx.fillStyle = "rgba(225, 29, 72, 0.86)";
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.fillRect(boxX, boxY + boxH - 4, Math.round(boxW * progress), 4);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, boxX + boxW / 2, boxY + boxH / 2 - 1);
+  }
+
   ctx.textAlign = "start";
   ctx.textBaseline = "alphabetic";
 }
@@ -4515,6 +4550,129 @@ function drawNetworkVisualization(data = state.networkVizData) {
   viz.fillText(historyLabel, width - 12 * ratio, 10 * ratio);
 }
 
+function recordLiveReplayFrame(match) {
+  if (!match?.ball || !Array.isArray(match.players)) return;
+  const matchKey = `${match.individualAId ?? "A"}:${match.individualBId ?? "B"}`;
+  const rec = state.lastRecordedScore;
+
+  if (rec.matchKey !== matchKey) {
+    rec.matchKey = matchKey;
+    rec.A = Number(match.score?.A) || 0;
+    rec.B = Number(match.score?.B) || 0;
+    rec.lastSampleTime = -1;
+    state.liveReplayBuffer = [];
+  }
+
+  const mTime = Number(match.time) || 0;
+  if (mTime - rec.lastSampleTime >= 0.06 || mTime < rec.lastSampleTime) {
+    rec.lastSampleTime = mTime;
+    state.liveReplayBuffer.push(JSON.parse(JSON.stringify(match)));
+    if (state.liveReplayBuffer.length > 85) {
+      state.liveReplayBuffer.shift();
+    }
+  }
+
+  const curA = Number(match.score?.A) || 0;
+  const curB = Number(match.score?.B) || 0;
+  if (curA > rec.A || curB > rec.B) {
+    rec.A = curA;
+    rec.B = curB;
+    if (state.liveReplayBuffer.length >= 20) {
+      const preFrames = state.liveReplayBuffer.slice(-75);
+      const lastF = JSON.parse(JSON.stringify(preFrames[preFrames.length - 1]));
+      lastF.score = { A: curA, B: curB };
+      state.lastGoalReplay = {
+        id: "live_goal",
+        title: `⚽ Live Goal (${curA}:${curB})`,
+        badge: `⚽ Goal (${curA}:${curB})`,
+        frames: [...preFrames, ...Array.from({ length: 10 }, () => lastF)],
+      };
+      if (ui.replayGoalBtn) {
+        ui.replayGoalBtn.classList.add("pulse");
+        ui.replayGoalBtn.textContent = `⏪ Goal (${curA}:${curB})!`;
+      }
+    }
+  }
+}
+
+function getActiveReplayMatch(frameTime) {
+  if (!state.activeReplay?.clip?.frames?.length) return null;
+  const { clip, startedAt, frameDurationMs } = state.activeReplay;
+  const frames = clip.frames;
+  const elapsed = Math.max(0, frameTime - startedAt);
+  const exactIndex = elapsed / frameDurationMs;
+
+  if (exactIndex >= frames.length - 1) {
+    state.activeReplay = null;
+    return null;
+  }
+
+  const idx0 = Math.floor(exactIndex);
+  const idx1 = Math.min(frames.length - 1, idx0 + 1);
+  const alpha = exactIndex - idx0;
+  return interpolateMatchState(frames[idx0], frames[idx1], alpha);
+}
+
+function updateSmartBroadcast(match, frameTime) {
+  if (!ui.broadcastBadge) return;
+
+  if (state.activeReplay?.clip) {
+    ui.broadcastBadge.textContent = `🎬 ${state.activeReplay.clip.badge || "Replay"}`;
+    ui.broadcastBadge.className = "broadcast-badge replay";
+    return;
+  }
+
+  if (!state.smartBroadcast || state.useMaxSpeed || state.speedPreset !== "slow") {
+    ui.broadcastBadge.textContent = `${state.mode} Mode`;
+    ui.broadcastBadge.className = "broadcast-badge midfield";
+    return;
+  }
+
+  if (!match?.ball || state.isPaused) return;
+
+  const bx = Number(match.ball.x) || 55;
+  const by = Number(match.ball.y) || 34;
+  const bSpeed = Math.hypot(Number(match.ball.vx) || 0, Number(match.ball.vy) || 0);
+  const nearGoal = bx < 32 || bx > 78;
+  const nearWall = bx < 2.2 || bx > 107.8 || by < 2.2 || by > 65.8;
+
+  if (bSpeed < 0.75 && (nearWall || !nearGoal)) {
+    if (!state.ballStallSince) state.ballStallSince = frameTime;
+  } else {
+    state.ballStallSince = 0;
+  }
+
+  const stallMs = state.ballStallSince ? frameTime - state.ballStallSince : 0;
+  if (stallMs > 4200) {
+    state.ballStallSince = frameTime;
+    postToWorker("skipMatch");
+    return;
+  }
+
+  let targetSteps = 1.15;
+  if (stallMs > 1400) {
+    targetSteps = 10;
+    ui.broadcastBadge.textContent = "⏩ 10× Unstalling";
+    ui.broadcastBadge.className = "broadcast-badge midfield";
+  } else if (nearGoal || bSpeed > 4.0) {
+    targetSteps = 1.15;
+    ui.broadcastBadge.textContent = "🔥 1× Goal Attack";
+    ui.broadcastBadge.className = "broadcast-badge";
+  } else {
+    targetSteps = 2.8;
+    ui.broadcastBadge.textContent = "⚡ 2.8× Midfield";
+    ui.broadcastBadge.className = "broadcast-badge midfield";
+  }
+
+  if (Math.abs(targetSteps - state.lastSmartSteps) > 0.15) {
+    state.lastSmartSteps = targetSteps;
+    postToWorker("setStepsPerFrame", {
+      stepsPerFrame: targetSteps,
+      useMaxSpeed: false,
+    });
+  }
+}
+
 function updateStats(frameTime = performance.now()) {
   const status = state.workerStatus || state.trainer?.getStatus?.() || {
     generation: 0,
@@ -4523,14 +4681,26 @@ function updateStats(frameTime = performance.now()) {
     bestFitness: 0,
     currentMatch: null,
   };
+  if (status.currentMatch) {
+    recordLiveReplayFrame(status.currentMatch);
+  }
   const renderedMatch = getRenderedMatch(frameTime);
-  const displayMatch = renderedMatch || status.currentMatch;
+  const liveMatch = renderedMatch || status.currentMatch;
+  updateSmartBroadcast(liveMatch, frameTime);
+  const replayMatch = getActiveReplayMatch(frameTime);
+  const displayMatch = replayMatch || liveMatch;
 
   ui.generation.textContent = String(status.generation);
-  ui.matchInfo.textContent = status.matchInfo;
+  ui.matchInfo.textContent = replayMatch && state.activeReplay?.clip
+    ? `${state.activeReplay.clip.matchLabel || "Highlight"}`
+    : status.matchInfo;
   ui.gamesPerSecond.textContent = formatGamesPerSecond(status.gamesPerSecond);
   ui.bestFitness.textContent = Number(status.bestFitness || 0).toFixed(2);
-  ui.modeInfo.textContent = state.isPaused ? `${state.mode} · paused` : state.mode;
+  ui.modeInfo.textContent = state.isPaused
+    ? `${state.mode} · paused`
+    : state.smartBroadcast && state.speedPreset === "slow" && !state.useMaxSpeed
+      ? "Smart Broadcast"
+      : state.mode;
   ui.renderInfo.textContent = state.showGames ? "On" : "Off";
 
   if (!state.generationTimeline.length && status.networkViz) {
@@ -4540,7 +4710,7 @@ function updateStats(frameTime = performance.now()) {
   }
 
   updatePlaybackControls();
-  updateMatchFitnessTables(status.currentMatch);
+  updateMatchFitnessTables(displayMatch || status.currentMatch);
   if (!state.useWorkerRenderer) {
     drawMatch(displayMatch);
   }
@@ -4960,6 +5130,10 @@ ui.autoSaveHours?.addEventListener("change", () => {
 });
 
 ui.skipBtn.addEventListener("click", () => {
+  if (state.activeReplay) {
+    state.activeReplay = null;
+    return;
+  }
   if (!state.workerStatus?.running) {
     addLog("No active match to skip.");
     return;
@@ -4968,15 +5142,106 @@ ui.skipBtn.addEventListener("click", () => {
   postToWorker("skipMatch");
 });
 
-applySpeedState({ notifyWorker: false, persist: false });
-const storedSettings = loadSettingsFromLocalStorage();
-if (storedSettings) {
-  setControlsFromConfig(storedSettings);
+function playHighlightClip(clip) {
+  if (!clip?.frames?.length) return;
+  const frameDurationMs = 66;
+  state.activeReplay = {
+    clip,
+    startedAt: performance.now(),
+    frameDurationMs,
+    totalDurationMs: clip.frames.length * frameDurationMs,
+  };
 }
+
+async function loadHighlightsData() {
+  try {
+    const res = await fetch(`./presets/highlights.json?v=${APP_ASSET_VERSION}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data?.highlights) && data.highlights.length) {
+      state.highlights = data.highlights;
+      if (!state.lastGoalReplay) {
+        state.lastGoalReplay = data.highlights[0];
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load highlights.json:", err);
+  }
+}
+
+async function loadPresetStage(stageKey) {
+  state.activeReplay = null;
+  if (stageKey === "gen_0") {
+    applySpeedState({ preset: "slow", multiplier: 1, useMaxSpeed: false, notifyWorker: false, persist: false });
+    ui.startBtn.click();
+    return;
+  }
+
+  try {
+    const res = await fetch(`./presets/${stageKey}.json?v=${APP_ASSET_VERSION}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const payload = await res.json();
+    const savedData = applyLoadedPopulationPayload(payload);
+    state.smartBroadcast = Boolean(ui.smartBroadcastToggle ? ui.smartBroadcastToggle.checked : true);
+    applySpeedState({ preset: "slow", multiplier: 1, useMaxSpeed: false, notifyWorker: false, persist: false });
+    startTrainingFromSavedData(savedData, `preset ${stageKey}`);
+    postToWorker("setStepsPerFrame", { stepsPerFrame: 1.15, useMaxSpeed: false });
+  } catch (error) {
+    console.warn("Preset load failed, falling back to new training:", error);
+    ui.startBtn.click();
+  }
+}
+
+ui.presetStageSelect?.addEventListener("change", () => {
+  void loadPresetStage(ui.presetStageSelect.value);
+});
+
+ui.playHighlightBtn?.addEventListener("click", () => {
+  const id = ui.highlightSelect?.value;
+  const clip = state.highlights.find((h) => h.id === id) || state.highlights[0];
+  if (clip) {
+    playHighlightClip(clip);
+  }
+});
+
+ui.highlightSelect?.addEventListener("change", () => {
+  const id = ui.highlightSelect.value;
+  const clip = state.highlights.find((h) => h.id === id);
+  if (clip) {
+    playHighlightClip(clip);
+  }
+});
+
+ui.replayGoalBtn?.addEventListener("click", () => {
+  ui.replayGoalBtn.classList.remove("pulse");
+  const clip = state.lastGoalReplay || state.highlights[0];
+  if (clip) {
+    playHighlightClip(clip);
+  }
+});
+
+ui.smartBroadcastToggle?.addEventListener("change", () => {
+  state.smartBroadcast = Boolean(ui.smartBroadcastToggle.checked);
+  if (!state.smartBroadcast && state.speedPreset === "slow" && !state.useMaxSpeed) {
+    state.lastSmartSteps = 1;
+    postToWorker("setStepsPerFrame", { stepsPerFrame: state.stepsPerFrame, useMaxSpeed: false });
+  }
+});
+
+ui.canvas?.addEventListener("click", () => {
+  if (state.activeReplay) {
+    state.activeReplay = null;
+  }
+});
+
+applySpeedState({ preset: "slow", multiplier: 1, useMaxSpeed: false, notifyWorker: false, persist: false });
 updateSaveStatus(null);
 
 applySidebarState();
 applyPitchWidth();
 updateStats();
-ui.startBtn.click();
+void loadHighlightsData();
+void loadPresetStage("gen_2885");
 requestAnimationFrame(tick);

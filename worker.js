@@ -53,7 +53,7 @@ const TEAM_COLORS = {
 
 const runtime = {
   trainer: null,
-  stepsPerFrame: FAST_STEPS,
+  stepsPerFrame: 1,
   isPaused: false,
   loopId: null,
   lastTickAt: null,
@@ -63,7 +63,7 @@ const runtime = {
   showGames: true,
   showTimeIndicator: true,
   showFieldStripes: true,
-  useMaxSpeed: true,
+  useMaxSpeed: false,
   accumulator: 0,
   previousRenderMatch: null,
   currentRenderMatch: null,
@@ -2814,7 +2814,7 @@ self.onmessage = (event) => {
         break;
       }
       case "setStepsPerFrame": {
-        runtime.stepsPerFrame = Math.max(1, Number(payload.stepsPerFrame) || FAST_STEPS);
+        runtime.stepsPerFrame = Math.max(0.25, Number(payload.stepsPerFrame) || 1);
         runtime.useMaxSpeed = Boolean(payload.useMaxSpeed);
         runtime.lastTickAt = performance.now();
         emitStatus(true);
