@@ -42,7 +42,7 @@ const MAX_NETWORK_VIZ_HEATMAP_RANGE = 1000;
 const NETWORK_VIZ_CHANGE_HISTORY_LIMIT = 20;
 const NETWORK_VIZ_MODE_DIRECT = "direct";
 const NETWORK_VIZ_MODE_HEATMAP = "heatmap";
-const NETWORK_VIZ_MODE_DEFAULT = NETWORK_VIZ_MODE_DIRECT;
+const NETWORK_VIZ_MODE_DEFAULT = NETWORK_VIZ_MODE_HEATMAP;
 const NETWORK_VIZ_INPUT_GROUPS = [
   { key: "teammates", label: "Teammates", size: 8 },
   { key: "opponents", label: "Opponents", size: 8 },
@@ -60,8 +60,8 @@ const FITNESS_BREAKDOWN_ROWS = [
   { key: "ownGoal", label: "Own goal" },
   { key: "total", label: "Total", total: true },
 ];
-const APP_ASSET_VERSION = "2026-10-27-2";
-const SETTINGS_STORAGE_KEY = "flower-3.settings.v3";
+const APP_ASSET_VERSION = "2026-10-27-3";
+const SETTINGS_STORAGE_KEY = "flower-3.settings.v4";
 const MAX_AUTOSAVE_HOURS = 168;
 const MIN_AUTOSAVE_INTERVAL_MS = 60 * 1000;
 
@@ -740,7 +740,7 @@ function normalizeNetworkVizHeatmapRange(value) {
 
 function getDefaultNetworkVizHeatmapGeneration(generation) {
   const normalizedGeneration = Math.max(1, Math.floor(Number(generation) || 1));
-  return Math.max(1, normalizedGeneration - 1);
+  return Math.max(1, normalizedGeneration - 20);
 }
 
 function getNetworkVizHeatmapCountThreshold(maxCount, depth = state.networkVizHeatmapRange) {

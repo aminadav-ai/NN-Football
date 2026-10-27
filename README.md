@@ -14,11 +14,11 @@
 
 ## 📸 Screenshots
 
-### 1. Live Match Pitch, Lineage Graph & Neural Network Diff / Heatmap
+### 1. Live Match Pitch, Lineage Graph & Neural Network Change Heatmap
 ![Pitch, Lineage and Neural Network Evolution](./docs/screenshots/01_pitch_and_evolution.png)
 
-### 2. Hyperparameter Controls & Fitness Weight Configuration
-![Sidebar Hyperparameter Controls](./docs/screenshots/02_sidebar_controls.png)
+### 2. Selected Individual Lineage & Cumulative Mutation Heatmap (Close-Up)
+![Lineage Tree and Neural Network Change Heatmap](./docs/screenshots/02_sidebar_controls.png)
 
 ---
 
