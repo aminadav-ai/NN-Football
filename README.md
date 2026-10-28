@@ -1,14 +1,14 @@
-# ⚽ NN-Football — 2D Neural Network Football Simulator
+# ⚽ Neural Futsal — Multi-Agent Tactical Football Simulator
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-10b981?style=for-the-badge&logo=github&logoColor=white)](https://aminadav-ai.github.io/NN-Football/)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-10b981?style=for-the-badge&logo=github&logoColor=white)](https://aminadav-ai.github.io/Neural-Futsal/)
 [![JavaScript](https://img.shields.io/badge/Vanilla_JS-ES_Modules-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 [![HTML5 Canvas](https://img.shields.io/badge/Rendering-HTML5_Canvas_%26_OffscreenCanvas-E34F26?style=for-the-badge&logo=html5&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API)
 [![Web Workers](https://img.shields.io/badge/Compute-Web_Workers-0284c7?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](./LICENSE)
 
-**Live Demo:** [https://aminadav-ai.github.io/NN-Football/](https://aminadav-ai.github.io/NN-Football/)
+**Live Demo:** [https://aminadav-ai.github.io/Neural-Futsal/](https://aminadav-ai.github.io/Neural-Futsal/)
 
-`NN-Football` is a zero-dependency browser simulation where 3v3 teams of autonomous neural network agents play fast-paced 2D futsal. Each player is controlled by a custom feed-forward **Deep MLP (`24 → 64 → 64 → 4` with `LeakyReLU` + `tanh`)** trained with **Backpropagation (`Adam` optimizer)** and **self-play policy fine-tuning** inside a background **Web Worker**.
+`Neural Futsal` is a zero-dependency browser simulation where 3v3 teams of autonomous neural network agents play fast-paced 2.5D futsal. Each player is controlled by a custom feed-forward **Deep MLP (`24 → 64 → 64 → 4` with `LeakyReLU` + `tanh`)** trained with **Backpropagation (`Adam` optimizer)** and **self-play policy fine-tuning** inside a background **Web Worker**.
 
 ---
 
@@ -37,8 +37,8 @@
 Because the simulator uses ES Modules and a Web Worker (`worker.js`), serve the folder over any local HTTP server:
 
 ```bash
-git clone https://github.com/aminadav-ai/NN-Football.git
-cd NN-Football
+git clone https://github.com/aminadav-ai/Neural-Futsal.git
+cd Neural-Futsal
 python3 -m http.server 8000
 ```
 
