@@ -14,11 +14,8 @@
 
 ## 📸 Screenshots
 
-### 1. Live 3v3 Tactical Match & Smart Broadcast Bar
+### Live 3v3 Tactical Match & Smart Broadcast Bar
 ![Live 3v3 Match and Smart Broadcast Bar](./docs/screenshots/01_pitch_and_evolution.png)
-
-### 2. Highlight Replay & Neural Network Controls
-![Highlight Replay and Controls](./docs/screenshots/02_sidebar_controls.png)
 
 ---
 
